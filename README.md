@@ -11,3 +11,13 @@ To try out abacus, setup a virtualenv and then install the dependencies in `requ
 Then, just run `python main.py`!
 
 abacus utilizes `rich` for its TUI and is a hybrid of autonomous agent and human-in-the-loop. It currently won't open a channel without your consent, but this will eventually be removed.
+
+## Reckless
+Oh, you're still here?
+
+Set these env vars.
+
+`GOOGLE_API_KEY`
+`LND_GRPC_HOST`
+`LND_TLS_CERT_PATH`
+`LND_ADMIN_MACAROON_PATH`
