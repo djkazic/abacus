@@ -12,6 +12,7 @@ from config import (
     TICK_INTERVAL_SECONDS,
     MAX_HISTORY_LENGTH,
     LND_ADMIN_MACAROON_PATH,
+    LND_NETWORK,
 )
 
 # Import global state
@@ -26,7 +27,10 @@ from tools.network_analysis_tools import (
     get_node_availability_data,
     analyze_peer_network,
 )
-from tools.mempool_space_tools import get_fee_recommendations, get_node_channels_from_mempool
+from tools.mempool_space_tools import (
+    get_fee_recommendations,
+    get_node_channels_from_mempool,
+)
 
 # Import the TUI
 from tui import TUI
@@ -45,7 +49,9 @@ lnd_client = LNDClient(
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(MODEL_NAME, tools=tools)
 
-SYSTEM_PROMPT = """You are an autonomous Lightning Network agent. Your core mission is to optimize liquidity and manage channels, using your tools to gather information and perform actions.
+SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent. Your core mission is to optimize liquidity and manage channels, using your tools to gather information and perform actions.
+
+You are currently operating on the **{LND_NETWORK}** network.
 
 **Decision-Making for Channel Opening:**
 - **Initial Peer Identification:** Begin by using `get_node_availability_data` to fetch an initial list of top-performing nodes. This call will also internally store the comprehensive node data for deeper analysis.

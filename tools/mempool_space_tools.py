@@ -1,4 +1,5 @@
 import requests
+from config import LND_NETWORK
 
 
 def get_fee_recommendations():
@@ -8,7 +9,11 @@ def get_fee_recommendations():
     Returns:
         dict: A dictionary containing the recommended fee rates.
     """
-    response = requests.get("https://mempool.space/api/v1/fees/recommended")
+    base_url = "https://mempool.space"
+    if LND_NETWORK == "testnet":
+        base_url += "/testnet"
+
+    response = requests.get(f"{base_url}/api/v1/fees/recommended")
     response.raise_for_status()
     return response.json()
 
@@ -17,7 +22,11 @@ def get_node_channels_from_mempool(pubkey: str) -> dict:
     """
     Fetches detailed channel information for a given Lightning Network node from mempool.space.
     """
-    url = f"https://mempool.space/api/v1/lightning/channels?public_key={pubkey}&status=active&index=-1"
+    base_url = "https://mempool.space"
+    if LND_NETWORK == "testnet":
+        base_url += "/testnet"
+
+    url = f"{base_url}/api/v1/lightning/channels?public_key={pubkey}&status=active&index=-1"
     try:
         response = requests.get(url)
         response.raise_for_status()

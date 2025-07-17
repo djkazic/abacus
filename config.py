@@ -8,7 +8,8 @@ MAX_HISTORY_LENGTH = 20  # Max number of turns to keep in chat history before co
 DOCS_DIR = "docs"  # Directory where your documentation files are stored
 
 # --- LND Configuration ---
-LND_NETWORK = "mainnet"  # Note: no APIs are available for testnet right now!
+# The network the agent is operating on. Can be 'mainnet' or 'testnet'.
+LND_NETWORK = os.getenv("LND_NETWORK", "mainnet")
 LND_ADMIN_MACAROON_PATH = os.getenv(
     "LND_ADMIN_MACAROON_PATH", f"/lnd/data/chain/bitcoin/{LND_NETWORK}/admin.macaroon"
 )
