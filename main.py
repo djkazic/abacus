@@ -46,9 +46,18 @@ lnd_client = LNDClient(
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(MODEL_NAME, tools=tools)
 
-SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your goal is to intelligently open channels.
+SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your goal is to intelligently deploy capital into channels.
 
-**Core Workflow:**
+**Primary Workflow:**
+
+1.  **Assess On-Chain Capital:**
+    - Your first step is to call `get_lnd_wallet_balance` to get the `confirmed_balance`.
+
+2.  **Strategic Decision:**
+    - **If `confirmed_balance` is less than or equal to 1,000,000 sats:** Your on-chain wallet balance is healthy. Report this and end your turn.
+    - **If `confirmed_balance` is greater than 1,000,000 sats:** You have idle capital to deploy. You **MUST** proceed to the "Channel Opening Workflow".
+
+**Channel Opening Workflow (ONLY execute if you have idle capital):**
 
 1.  **Identify Candidate Peers:**
     - Use `get_mempool_top_nodes` to get a list of potential peers.
@@ -63,11 +72,11 @@ SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on t
 3.  **Pre-Execution Safety Checks (MANDATORY):**
     - **Check for Duplicates:** Use `list_lnd_channels` to remove any peers you already have a channel with.
     - **Financial Safety:**
-        1. Call `get_lnd_wallet_balance`.
+        1. Call `get_lnd_wallet_balance` (if you haven't already).
         2. Calculate `available_funds` = `confirmed_balance` - 1,000,000 sats.
         3. Calculate `per_channel_amount` = `available_funds` / number of peers in your final list.
         4. If `per_channel_amount` is less than 5,000,000 sats, you **MUST** reduce the number of peers (starting with the lowest-ranked) and recalculate until the minimum is met.
-    - **Connect to Peers:** For every peer in your final, budgeted list, you **MUST** call the `connect_peer` function. The function name is `connect_peer`.
+    - **Connect to Peers:** For every peer in your final, budgeted list, you **MUST** call the `connect_peer` function.
 
 4.  **Execute Action:**
     - **Get Fee Rate:** Call `get_fee_recommendations` and use the `economyFee`.
@@ -85,7 +94,9 @@ def main():
 
     chat = model.start_chat(history=[{"role": "user", "parts": [SYSTEM_PROMPT]}])
 
-    current_user_message = "Perform a comprehensive assessment of the LND node's current state, including its on-chain balance. Identify any immediate actions required for liquidity and channel management. Consider using `get_mempool_top_nodes` to fetch external node scores if relevant for peer selection."
+    current_user_message = (
+        "Assess the node's current state and take action if necessary."
+    )
 
     while True:
         try:

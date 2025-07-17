@@ -307,7 +307,7 @@ class LNDClient:
                 peers_list.append(
                     {
                         "pub_key": peer.pub_key,
-                        "alias": peer.alias,
+                        "alias": peer.alias or "N/A",
                         "channels": peer.num_channels,
                         "total_capacity_sat": str(peer.total_capacity),
                         "address": peer.address,
