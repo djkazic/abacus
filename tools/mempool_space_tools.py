@@ -69,10 +69,84 @@ def _get_node_channels_from_mempool(pubkey: str) -> dict:
         return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
 
-def batch_get_node_channels_from_mempool(pubkeys: list[str]) -> dict:
+def get_top_and_filter_nodes(limit: int = 10) -> dict:
     """
-    Fetches channel information for multiple nodes in parallel.
+    Fetches a list of top nodes, enriches them with details, and filters them
+    based on their average fee rates.
     """
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        results = list(executor.map(_get_node_channels_from_mempool, pubkeys))
-    return {"results": results}
+    base_url = "https://mempool.space"
+    if LND_NETWORK == "testnet":
+        base_url += "/testnet"
+
+    try:
+        # Step 1: Get top nodes by channel count
+        rankings_url = f"{base_url}/api/v1/lightning/nodes/rankings"
+        response = requests.get(rankings_url)
+        response.raise_for_status()
+        rankings = response.json()
+        top_by_channels = rankings.get("topByChannels", [])
+
+        if not top_by_channels:
+            return {
+                "status": "ERROR",
+                "message": "Could not retrieve top nodes by channel count.",
+            }
+
+        # Step 2: Enrich with details and filter
+        pubkeys_to_check = [
+            node.get("publicKey")
+            for node in top_by_channels[: int(limit)]
+            if node.get("publicKey")
+        ]
+
+        # Fetch channel info in parallel
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            channel_results = list(
+                executor.map(_get_node_channels_from_mempool, pubkeys_to_check)
+            )
+
+        # Filter out nodes with low fee rates
+        final_nodes = []
+        for result in channel_results:
+            if result.get("status") == "OK":
+                data = result.get("data", {})
+                avg_fee = data.get("average_fee_rate_ppm")
+                if isinstance(avg_fee, (int, float)) and avg_fee <= 100:
+                    continue  # Skip nodes with low or zero fees
+
+                # If the node is suitable, fetch its full details
+                pubkey = data.get("pubkey")
+                details_url = f"{base_url}/api/v1/lightning/nodes/{pubkey}"
+                details_response = requests.get(details_url)
+                if details_response.status_code == 200:
+                    details = details_response.json()
+                    score = details.get("active_channel_count", 0) * int(
+                        details.get("capacity", 0)
+                    )
+                    final_nodes.append(
+                        {
+                            "pub_key": pubkey,
+                            "alias": details.get("alias", "N/A"),
+                            "score": score,
+                            "total_capacity": int(details.get("capacity", 0)),
+                            "total_peers": details.get("active_channel_count", 0),
+                            "addresses": [details.get("sockets", "")],
+                            "average_fee_rate_ppm": avg_fee,
+                        }
+                    )
+
+        # Sort by our synthesized score
+        final_nodes.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+        return {
+            "status": "OK",
+            "data_summary": {"top_nodes_summary": final_nodes},
+        }
+
+    except requests.exceptions.RequestException as e:
+        return {
+            "status": "ERROR",
+            "message": f"Failed to fetch data from mempool.space: {e}",
+        }
+    except Exception as e:
+        return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}

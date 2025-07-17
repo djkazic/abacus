@@ -143,7 +143,7 @@ class LNDClient:
         if balance_response["status"] != "OK":
             return balance_response
 
-        confirmed_balance = int(balance_response["data"]["confirmed_balance"])
+        confirmed_balance = int(balance_response["data"]["confirmedBalance"])
         available_balance = confirmed_balance - 1000000  # 1M satoshi reserve
 
         if int(local_funding_amount_sat) > available_balance:
@@ -186,7 +186,7 @@ class LNDClient:
         if balance_response["status"] != "OK":
             return balance_response  # Propagate the error
 
-        confirmed_balance = int(balance_response["data"]["confirmed_balance"])
+        confirmed_balance = int(balance_response["data"]["confirmedBalance"])
         available_balance = confirmed_balance - 1000000  # 1M satoshi reserve
 
         total_funding_amount = sum(
@@ -267,6 +267,31 @@ class LNDClient:
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def batch_connect_peers(self, peers: list) -> dict:
+        """
+        Connects to multiple Lightning Network peers in a batch.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        results = []
+        for peer in peers:
+            node_pubkey = peer.get("node_pubkey")
+            host_port = peer.get("host_port")
+            if not node_pubkey or not host_port:
+                results.append(
+                    {
+                        "status": "ERROR",
+                        "message": "Each peer in the list must have 'node_pubkey' and 'host_port'.",
+                    }
+                )
+                continue
+
+            result = self.connect_peer(node_pubkey, host_port)
+            results.append(result)
+
+        return {"status": "OK", "data": results}
 
     def get_lnd_state(self) -> dict:
         """Fetches the internal state of the LND node using gRPC."""

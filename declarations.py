@@ -122,9 +122,9 @@ list_documents_by_type_declaration = FunctionDeclaration(
     },
 )
 
-get_mempool_top_nodes_declaration = FunctionDeclaration(
-    name="get_mempool_top_nodes",
-    description="Fetches a list of top nodes from mempool.space, enriched with address and capacity details.",
+get_top_and_filter_nodes_declaration = FunctionDeclaration(
+    name="get_top_and_filter_nodes",
+    description="Fetches a list of top nodes from mempool.space, enriches them with details, and filters them based on their average fee rates.",
     parameters={
         "type": "object",
         "properties": {
@@ -178,22 +178,6 @@ analyze_peer_network_declaration = FunctionDeclaration(
     },
 )
 
-batch_get_node_channels_from_mempool_declaration = FunctionDeclaration(
-    name="batch_get_node_channels_from_mempool",
-    description="Fetches detailed channel information for a given Lightning Network node from mempool.space.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "pubkeys": {
-                "type": "array",
-                "description": "The public keys of the nodes to query channel details for.",
-                "items": {"type": "string"},
-            },
-        },
-        "required": ["pubkeys"],
-    },
-)
-
 get_lnd_state_declaration = FunctionDeclaration(
     name="get_lnd_state",
     description="Fetches the internal state of the LND node.",
@@ -239,6 +223,35 @@ batch_open_channel_declaration = FunctionDeclaration(
     },
 )
 
+batch_connect_peers_declaration = FunctionDeclaration(
+    name="batch_connect_peers",
+    description="Connects to multiple Lightning Network peers in a batch.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "peers": {
+                "type": "array",
+                "description": "A list of peers to connect to.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "node_pubkey": {
+                            "type": "string",
+                            "description": "The public key of the peer to connect to.",
+                        },
+                        "host_port": {
+                            "type": "string",
+                            "description": "The host:port of the peer (e.g., '3.33.236.230:9735').",
+                        },
+                    },
+                    "required": ["node_pubkey", "host_port"],
+                },
+            },
+        },
+        "required": ["peers"],
+    },
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -250,10 +263,10 @@ tools = [
     Tool(function_declarations=[get_document_content_declaration]),
     Tool(function_declarations=[list_all_documents_declaration]),
     Tool(function_declarations=[list_documents_by_type_declaration]),
-    Tool(function_declarations=[get_mempool_top_nodes_declaration]),
+    Tool(function_declarations=[get_top_and_filter_nodes_declaration]),
     Tool(function_declarations=[connect_peer_declaration]),
-    Tool(function_declarations=[batch_get_node_channels_from_mempool_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
     Tool(function_declarations=[batch_open_channel_declaration]),
+    Tool(function_declarations=[batch_connect_peers_declaration]),
 ]

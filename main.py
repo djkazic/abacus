@@ -6,6 +6,7 @@ import sys
 import select
 from collections import deque
 from google.api_core.retry import Retry
+from google.generativeai.types import StopCandidateException
 
 # Import configurations
 from config import (
@@ -25,10 +26,9 @@ from declarations import tools
 
 # Import tool implementations
 from tools.lnd_tools import LNDClient
-from tools.network_analysis_tools import get_mempool_top_nodes
 from tools.mempool_space_tools import (
     get_fee_recommendations,
-    batch_get_node_channels_from_mempool,
+    get_top_and_filter_nodes,
 )
 
 # Import the TUI
@@ -50,41 +50,40 @@ model = genai.GenerativeModel(MODEL_NAME, tools=tools)
 
 SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your goal is to intelligently deploy capital into channels.
 
+**Core Instruction:** Before calling any tool, you **MUST** first output your reasoning for the tool call you are about to make in a concise, one-sentence form. After the tool call is complete and you have the result, you must also output a summary of your next planned step.
+
 **Primary Workflow:**
 
 1.  **Assess On-Chain Capital:**
-    - Your first step is to call `get_lnd_wallet_balance` to get the `confirmed_balance`.
+    - Your first step is to call `get_lnd_wallet_balance` to get the `confirmedBalance`.
 
 2.  **Strategic Decision:**
-    - **If `confirmed_balance` is less than or equal to 1,000,000 sats:** Your on-chain wallet balance is healthy. Report this and end your turn.
-    - **If `confirmed_balance` is greater than 1,000,000 sats:** You have idle capital to deploy. You **MUST** proceed to the "Channel Opening Workflow".
+    - **If `confirmedBalance` is less than or equal to 1,000,000 sats:** Your on-chain wallet balance is healthy. Report this and end your turn.
+    - **If `confirmedBalance` is greater than 1,000,000 sats:** You have idle capital to deploy. You **MUST** proceed to the "Channel Opening Workflow".
 
 **Channel Opening Workflow (ONLY execute if you have idle capital):**
 
-1.  **Identify Candidate Peers:**
-    - Use `get_mempool_top_nodes` to get a list of potential peers.
-
-2.  **Filter for Suitable Peers:**
-    - For all candidates, use `batch_get_node_channels_from_mempool` to check their average fee rates in a single call.
+1.  **Identify and Filter Candidate Peers:**
+    - Use `get_top_and_filter_nodes` to get a list of 10 potential peers, automatically filtered for suitability (fee rates > 100 ppm).
     - **Define "Suitable":**
-        - **If Bootstrapping (0 active channels):** A peer is suitable if it has high connectivity (`total_peers`). Liquidity status is ignored.
-        - **If Established (1+ active channels):** A peer is suitable if it has high connectivity **AND** is a liquidity source (`average_fee_rate_ppm` < 100).
-    - Create a final list of all suitable peers.
+        - **If Bootstrapping (0 active channels):** A peer is suitable if it has high connectivity (`total_peers`).
+        - **If Established (1+ active channels):** A peer is suitable if it has high connectivity **AND** is a liquidity source (`average_fee_rate_ppm` < 1000).
+    - Create a final list of all suitable peers from the tool's output.
 
 3.  **Pre-Execution Safety Checks (MANDATORY):**
     - **Check for Duplicates:** Use `list_lnd_channels` to remove any peers you already have a channel with.
     - **Financial Safety:**
         1. Call `get_lnd_wallet_balance` (if you haven't already).
-        2. Calculate `available_funds` = `confirmed_balance` - 1,000,000 sats.
+        2. Calculate `available_funds` = `confirmedBalance` - 1,000,000 sats.
         3. Calculate `per_channel_amount` = `available_funds` / number of peers in your final list.
         4. If `per_channel_amount` is less than 5,000,000 sats, you **MUST** reduce the number of peers (starting with the lowest-ranked) and recalculate until the minimum is met.
-    - **Connect to Peers:** For every peer in your final, budgeted list, you **MUST** call the `connect_peer` function.
+    - **Connect to Peers:** For every peer in your final, budgeted list, you **MUST** call the `batch_connect_peers` function. This is a pre-emptive step to ensure connectivity. **IMPORTANT:** A failure to connect to a peer in this step does **NOT** disqualify them from the channel opening process. The subsequent `open_channel` or `batch_open_channel` call will establish the connection if needed. The only reason to disqualify a peer at this stage is if you already have an open channel with them, which you should have already checked using `list_lnd_channels`.
 
 4.  **Execute Action:**
-    - **Get Fee Rate:** Call `get_fee_recommendations` and use the `economyFee`.
+    - **Get Fee Rate:** Call `get_fee_recommendations` and use the `economyFee` for the `sat_per_vbyte` parameter.
     - **Open Channels:**
-        - If you have 2 or more peers in your final list, use `batch_open_channel`.
-        - If you have 1 peer, use `open_channel`.
+        - If you have 2 or more peers in your final list, use `batch_open_channel`, passing the calculated `per_channel_amount` and the `sat_per_vbyte` from the previous step.
+        - If you have 1 peer, use `open_channel`, passing the `per_channel_amount` and `sat_per_vbyte`.
         - If you have 0 peers, report that none were suitable and stop.
 """
 
@@ -123,9 +122,15 @@ def main():
 
             tui.start_live_display()
 
-            response = chat.send_message(
-                current_user_message, request_options=request_options
-            )
+            try:
+                response = chat.send_message(
+                    current_user_message, request_options=request_options
+                )
+            except StopCandidateException as e:
+                tui.stop_live_display()
+                tui.display_error(f"Model stopped with reason: {e.finish_reason}")
+                tui.display_error(f"Candidate: {e.candidate}")
+                continue
             total_tokens_used += response.usage_metadata.total_token_count
 
             current_response_parts = list(response.parts)
@@ -183,8 +188,8 @@ def main():
                             "batch_open_channel": lnd_client.batch_open_channel,
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
-                            "get_mempool_top_nodes": get_mempool_top_nodes,
-                            "batch_get_node_channels_from_mempool": batch_get_node_channels_from_mempool,
+                            "batch_connect_peers": lnd_client.batch_connect_peers,
+                            "get_top_and_filter_nodes": get_top_and_filter_nodes,
                             "get_fee_recommendations": get_fee_recommendations,
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                         }
@@ -228,10 +233,17 @@ def main():
                         )
                     ]
 
-                next_response = chat.send_message(
-                    genai.protos.Content(parts=tool_responses_parts),
-                    request_options=request_options,
-                )
+                try:
+                    next_response = chat.send_message(
+                        genai.protos.Content(parts=tool_responses_parts),
+                        request_options=request_options,
+                    )
+                except StopCandidateException as e:
+                    tui.stop_live_display()
+                    tui.display_error(f"Model stopped with reason: {e.finish_reason}")
+                    tui.display_error(f"Candidate: {e.candidate}")
+                    current_response_parts = []
+                    continue
                 total_tokens_used += next_response.usage_metadata.total_token_count
                 current_response_parts = list(next_response.parts)
 
