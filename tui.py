@@ -58,19 +58,15 @@ class TUI:
         )
         self.console.print(panel)
 
-    def display_tool_output(self, tool_name: str, output: dict, truncate: int = 250):
+    def display_tool_output(self, tool_name: str, output: dict):
         """
         Displays the output of a tool call.
 
         Args:
             tool_name: The name of the tool that was called.
             output: The output from the tool.
-            truncate: The length to truncate the output to.
         """
         output_str = json.dumps(output, indent=2)
-
-        if len(output_str) > truncate:
-            output_str = output_str[:truncate] + "..."
 
         syntax = Syntax(output_str, "json", theme="monokai", line_numbers=True)
         panel = Panel(
