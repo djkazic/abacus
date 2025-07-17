@@ -62,16 +62,15 @@ SYSTEM_PROMPT = """You are an autonomous Lightning Network agent. Your core miss
         * **From Peers' Outbound Fees (recursive inference):** If the majority of a candidate peer's *own* channels (as seen in `get_node_channels_from_amboss` output) are connected to nodes that have *high outbound fees* (meaning those nodes are sinks), then the candidate peer itself is likely a **liquidity sink**. Conversely, if its channels are mostly to nodes with *low outbound fees* (sources), then the candidate peer is likely a **liquidity source**.
 
 - **Peer Selection and Final Action:**
-    1. After gathering all data (`analyze_peer_network` and `get_node_channels_from_amboss` for all candidates), you will create a final list of suitable peers.
-    2. A peer is defined as "suitable" if it meets **both** of the following criteria:
-        - It is a **liquidity source**.
-        - It has high connectivity (e.g., a high score from `analyze_peer_network`).
+    1. After gathering all data (`analyze_peer_network` and `get_node_channels_from_amboss` for all candidates), you will create a final list of suitable peers based on the node's current state.
+    2. **Definition of a "Suitable Peer":**
+        - **If the node is bootstrapping (has 0 active channels):** A peer is considered "suitable" if it has high connectivity. The liquidity source/sink status **MUST** be ignored for this initial step. The priority is to get connected.
+        - **If the node is established (has 1 or more active channels):** A peer is only "suitable" if it meets **both** of the following criteria: it is a **liquidity source** AND it has high connectivity.
     3. **Your final action is dictated by the number of suitable peers you have identified:**
         - **If your list contains two or more suitable peers, you MUST use the `batch_open_channel` tool.**
         - **If your list contains exactly one suitable peer, you MUST use the `open_channel` tool.**
         - **If your list contains zero suitable peers, you MUST report that you found no suitable peers and end your turn.**
     4. Before calling either channel opening tool, you MUST use `connect_peer` for every peer in your final list.
-    **Special Rule for New Nodes (0 Channels):** If the LND node has `num_active_channels` equal to 0 (zero), the primary goal is to establish a strong initial network footprint. The standard analysis and peer selection process still applies. If multiple highly-suitable peers are identified, you **MUST** use `batch_open_channel` to establish a robust initial set of connections. Opening a single channel is only acceptable if only one suitable peer is found. Once at least one channel is open, the agent can revert to stricter liquidity optimization criteria for subsequent channel openings.
 
 - **Channel Redundancy Check:** Before attempting to open any new channel(s), you **MUST** call `list_lnd_channels` to ensure a channel with the target peer(s) does not already exist.
 - **Connection Prerequisite:** **Before opening a channel, you MUST first use `connect_peer` with the chosen peer's public key and a valid `host:port` address.** You can obtain the `host:port` from the `addresses` field within the node data returned by `get_node_availability_data`. This must be done for every peer, even when using `batch_open_channel`.
@@ -134,6 +133,15 @@ def main():
                 for function_call in function_calls_to_execute:
                     function_name = function_call.name
                     function_args = dict(function_call.args)
+
+                    if (
+                        function_name == "batch_open_channel"
+                        and "channels" in function_args
+                    ):
+                        function_args["channels"] = [
+                            dict(item) for item in function_args["channels"]
+                        ]
+
                     tui.display_tool_call(function_name, function_args)
 
                     tool_output = {}

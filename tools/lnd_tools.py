@@ -245,7 +245,7 @@ class LNDClient:
                     "pending_channels": [
                         {
                             "txid": p.txid.hex(),
-                            "output_index": p.output_index,
+                            "output_index": int(p.output_index),
                         }
                         for p in response.pending_channels
                     ]
