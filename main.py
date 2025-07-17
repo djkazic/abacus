@@ -103,7 +103,7 @@ def main():
         try:
             tui.display_message("system", "--- TICK START ---")
 
-            if "Perform a comprehensive assessment" in current_user_message:
+            if "Assess the node" in current_user_message:
                 tui.display_message("system", f"Agent prompt: {current_user_message}")
             else:
                 tui.display_message("user", current_user_message)
@@ -242,8 +242,6 @@ def main():
                 current_user_message = sys.stdin.readline().strip()
                 if current_user_message.lower() in ["exit", "quit"]:
                     break
-            else:
-                current_user_message = "Perform a comprehensive assessment of the LND node's current state, including its on-chain balance. Identify any immediate actions required for liquidity and channel management. Consider using `get_node_availability_data` to fetch external node scores if relevant for peer selection. After identifying a potential peer, use `analyze_peer_network` to understand its connectivity before opening a channel."
 
         except KeyboardInterrupt:
             tui.display_message("system", "\nAgent stopped by user.")
