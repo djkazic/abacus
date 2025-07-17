@@ -175,7 +175,6 @@ class LNDClient:
         self,
         node_pubkey: str,
         local_funding_amount_sat: int,
-        push_amount_sat: int = 0,
         sat_per_vbyte: int = 0,
     ) -> dict:
         """
@@ -187,9 +186,9 @@ class LNDClient:
         try:
             request = ln.OpenChannelRequest(
                 node_pubkey=bytes.fromhex(node_pubkey),
-                local_funding_amount=local_funding_amount_sat,
-                push_sat=push_amount_sat,
-                sat_per_vbyte=sat_per_vbyte,
+                local_funding_amount=int(local_funding_amount_sat),
+                push_sat=0,
+                sat_per_vbyte=int(sat_per_vbyte),
             )
             # Use OpenChannelSync for a synchronous response.
             response = self.stub.OpenChannelSync(request)
@@ -228,15 +227,15 @@ class LNDClient:
             batch_channels.append(
                 ln.BatchOpenChannel(
                     node_pubkey=bytes.fromhex(ch["node_pubkey"]),
-                    local_funding_amount=ch["local_funding_amount"],
-                    push_sat=ch.get("push_sat", 0),
+                    local_funding_amount=int(ch["local_funding_amount_sat"]),
+                    push_sat=0,
                 )
             )
 
         try:
             request = ln.BatchOpenChannelRequest(
                 channels=batch_channels,
-                sat_per_vbyte=sat_per_vbyte,
+                sat_per_vbyte=int(sat_per_vbyte),
             )
             response = self.stub.BatchOpenChannel(request)
             return {

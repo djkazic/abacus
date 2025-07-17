@@ -50,10 +50,6 @@ open_channel_declaration = FunctionDeclaration(
                 "type": "integer",
                 "description": "The amount of satoshis to commit to the channel from the local node.",
             },
-            "push_amount_sat": {
-                "type": "integer",
-                "description": "Optional: The amount of satoshis to push to the counterparty at channel opening (default 0).",
-            },
             "sat_per_vbyte": {
                 "type": "integer",
                 "description": "Optional: The fee rate in satoshis per virtual byte for the funding transaction.",
@@ -225,16 +221,12 @@ batch_open_channel_declaration = FunctionDeclaration(
                             "type": "string",
                             "description": "The public key of the peer.",
                         },
-                        "local_funding_amount": {
+                        "local_funding_amount_sat": {
                             "type": "integer",
                             "description": "The amount of satoshis to commit.",
                         },
-                        "push_sat": {
-                            "type": "integer",
-                            "description": "Optional: The amount of satoshis to push to the counterparty.",
-                        },
                     },
-                    "required": ["node_pubkey", "local_funding_amount"],
+                    "required": ["node_pubkey", "local_funding_amount_sat"],
                 },
             },
             "sat_per_vbyte": {
