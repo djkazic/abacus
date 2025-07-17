@@ -12,6 +12,7 @@ from config import (
     TICK_INTERVAL_SECONDS,
     MAX_HISTORY_LENGTH,
     LND_ADMIN_MACAROON_PATH,
+    MAX_PAYLOAD_SIZE_CHARACTERS,
     LND_NETWORK,
 )
 
@@ -201,6 +202,23 @@ def main():
                             )
                         )
                     )
+
+                # Safety check for payload size
+                payload_str = str(tool_responses_parts)
+                if len(payload_str) > MAX_PAYLOAD_SIZE_CHARACTERS:
+                    error_message = {
+                        "error": f"Tool response payload is too large ({len(payload_str)} characters). "
+                        "The maximum is {MAX_PAYLOAD_SIZE_CHARACTERS}. "
+                        "Please try a more specific tool call."
+                    }
+                    # This simulates an error response from a tool
+                    tool_responses_parts = [
+                        genai.protos.Part(
+                            function_response=genai.protos.FunctionResponse(
+                                name="error_handler", response=error_message
+                            )
+                        )
+                    ]
 
                 next_response = chat.send_message(
                     genai.protos.Content(parts=tool_responses_parts)

@@ -125,7 +125,7 @@ class LNDClient:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
     def get_lnd_wallet_balance(self) -> dict:
-        """Shows the on-chain wallet balance of the LND node using gRPC."""
+        """Shows a summary of the on-chain wallet balance of the LND node using gRPC."""
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
 
@@ -134,18 +134,6 @@ class LNDClient:
             balance_dict = {
                 "total_balance": str(response.total_balance),
                 "confirmed_balance": str(response.confirmed_balance),
-                "unconfirmed_balance": str(response.unconfirmed_balance),
-                "locked_balance": str(response.locked_balance),
-                "reserved_balance_anchor_chan": str(
-                    response.reserved_balance_anchor_chan
-                ),
-                "account_balance": {
-                    account: {
-                        "confirmed_balance": str(bal.confirmed_balance),
-                        "unconfirmed_balance": str(bal.unconfirmed_balance),
-                    }
-                    for account, bal in response.account_balance.items()
-                },
             }
             return {"status": "OK", "data": balance_dict}
         except grpc.RpcError as e:
