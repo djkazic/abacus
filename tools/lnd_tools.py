@@ -86,7 +86,10 @@ class LNDClient:
 
         try:
             response = self.stub.GetInfo(ln.GetInfoRequest())
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -102,7 +105,10 @@ class LNDClient:
 
         try:
             response = self.stub.WalletBalance(ln.WalletBalanceRequest())
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -146,7 +152,10 @@ class LNDClient:
                 sat_per_vbyte=int(sat_per_vbyte),
             )
             response = self.stub.OpenChannelSync(request)
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -182,7 +191,10 @@ class LNDClient:
                 sat_per_vbyte=int(sat_per_vbyte),
             )
             response = self.stub.BatchOpenChannel(request)
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -208,7 +220,7 @@ class LNDClient:
             return balance_response
 
         confirmed_balance = int(
-            balance_response.get("data", {}).get("confirmedBalance", 0)
+            balance_response.get("data", {}).get("confirmed_balance", 0)
         )
         if not confirmed_balance:
             return {
@@ -279,7 +291,10 @@ class LNDClient:
         print("Fetching LND peers via gRPC...")
         try:
             response = self.stub.ListPeers(ln.ListPeersRequest())
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -302,7 +317,10 @@ class LNDClient:
             request = ln.ConnectPeerRequest(addr=peer_address, perm=True)
             response = self.stub.ConnectPeer(request)
 
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -346,7 +364,10 @@ class LNDClient:
 
         try:
             response = self.state_stub.GetState(state_service.GetStateRequest())
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -362,7 +383,10 @@ class LNDClient:
 
         try:
             response = self.stub.ListChannels(ln.ListChannelsRequest())
-            return {"status": "OK", "data": MessageToDict(response)}
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
