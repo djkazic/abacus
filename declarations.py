@@ -69,6 +69,12 @@ list_lnd_peers_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+list_lnd_channels_declaration = FunctionDeclaration(
+    name="list_lnd_channels",
+    description="Lists information about this node's channels.",
+    parameters={"type": "object", "properties": {}}
+)
+
 search_documents_declaration = FunctionDeclaration(
     name="search_documents",
     description="Searches the internal documentation for relevant documents based on a query. Use this to find 'tome' for factual info or 'runbook' for command-centric guides.",
@@ -246,6 +252,7 @@ tools = [
     Tool(function_declarations=[set_fee_policy_declaration]),
     Tool(function_declarations=[open_channel_declaration]),
     Tool(function_declarations=[list_lnd_peers_declaration]),
+    Tool(function_declarations=[list_lnd_channels_declaration]),
     Tool(function_declarations=[search_documents_declaration]),
     Tool(function_declarations=[get_document_content_declaration]),
     Tool(function_declarations=[list_all_documents_declaration]),
