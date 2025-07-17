@@ -120,22 +120,17 @@ list_documents_by_type_declaration = FunctionDeclaration(
     },
 )
 
-get_node_availability_data_declaration = FunctionDeclaration(
-    name="get_node_availability_data",
-    description="Fetches and summarizes external node availability data (e.g., from Lightning Cluster). Stores the full 'scored' nodes dictionary internally for recursive analysis. Provides overall network statistics and details for the top-performing nodes.",
+get_mempool_top_nodes_declaration = FunctionDeclaration(
+    name="get_mempool_top_nodes",
+    description="Fetches a list of top nodes from mempool.space, enriched with address and capacity details.",
     parameters={
         "type": "object",
         "properties": {
-            "url": {
-                "type": "string",
-                "description": "The URL of the JSON file containing node availability data (e.g., 'https://ln-scores.prod.lightningcluster.com/availability/v3/btc_summary.json').",
-            },
             "limit": {
                 "type": "integer",
-                "description": "Optional: The maximum number of top nodes to include in the summary (default is 5).",
+                "description": "Optional: The maximum number of top nodes to retrieve (default is 10).",
             },
         },
-        "required": ["url"],
     },
 )
 
@@ -255,17 +250,10 @@ tools = [
     Tool(function_declarations=[get_document_content_declaration]),
     Tool(function_declarations=[list_all_documents_declaration]),
     Tool(function_declarations=[list_documents_by_type_declaration]),
-    Tool(function_declarations=[get_node_availability_data_declaration]),
+    Tool(function_declarations=[get_mempool_top_nodes_declaration]),
     Tool(function_declarations=[connect_peer_declaration]),
-    Tool(function_declarations=[analyze_peer_network_declaration]),
     Tool(function_declarations=[get_node_channels_from_mempool_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
     Tool(function_declarations=[batch_open_channel_declaration]),
 ]
-
-list_lnd_channels_declaration = FunctionDeclaration(
-    name="list_lnd_channels",
-    description="Lists all open channels.",
-    parameters={"type": "object", "properties": {}},
-)

@@ -23,10 +23,7 @@ from declarations import tools
 
 # Import tool implementations
 from tools.lnd_tools import LNDClient
-from tools.network_analysis_tools import (
-    get_node_availability_data,
-    analyze_peer_network,
-)
+from tools.network_analysis_tools import get_mempool_top_nodes
 from tools.mempool_space_tools import (
     get_fee_recommendations,
     get_node_channels_from_mempool,
@@ -54,21 +51,17 @@ SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent. Your core mis
 You are currently operating on the **{LND_NETWORK}** network.
 
 **Decision-Making for Channel Opening:**
-- **Initial Peer Identification:** Begin by using `get_node_availability_data` to fetch an initial list of top-performing nodes. This call will also internally store the comprehensive node data for deeper analysis.
-- **Deep Network Analysis:**
-    1.  Identify at least 2-3 of the highest-scoring potential peers from the `top_nodes_summary` provided by `get_node_availability_data`.
-    2.  For **EACH** of these promising candidate peers, you *must* use `analyze_peer_network` on its `pub_key`. This analysis will reveal its broader network connectivity, including its direct and indirect peers.
-    3.  A well-connected peer typically has at least 5 existing channels and a high score. When calling `analyze_peer_network`, limit `max_depth` to 3 and `peers_per_level` to 3 to manage token usage.
+- **Initial Peer Identification:** Begin by using `get_mempool_top_nodes` to fetch a list of top-performing nodes.
 - **Liquidity Sink/Source Analysis:**
-    1.  After performing `analyze_peer_network` on your top candidates, you **MUST** call `get_node_channels_from_mempool` for **each of them** to retrieve their detailed channel fee policies.
-    2.  **Inferring Liquidity Behavior:** The `get_node_channels_from_mempool` tool returns a list of channels. For each channel, the `fee_rate` is the outbound fee rate for the peer you are analyzing.
-        - A peer is a **liquidity sink** if the average `fee_rate` across all its channels is high (e.g., > 500 ppm).
-        - A peer is a **liquidity source** if the average `fee_rate` is low (e.g., < 100 ppm).
+    1.  For **EACH** of the candidate peers from the previous step, you **MUST** call `get_node_channels_from_mempool` to retrieve their detailed channel fee policies.
+    2.  **Inferring Liquidity Behavior:** The `get_node_channels_from_mempool` tool returns a summary containing the `average_fee_rate_ppm`.
+        - A peer is a **liquidity sink** if its `average_fee_rate_ppm` is high (e.g., > 500).
+        - A peer is a **liquidity source** if its `average_fee_rate_ppm` is low (e.g., < 100).
 
 - **Peer Selection and Final Action:**
-    1. After gathering all data (`analyze_peer_network` and `get_node_channels_from_mempool` for all candidates), you will create a final list of suitable peers based on the node's current state.
+    1. After gathering all data, you will create a final list of suitable peers based on the node's current state.
     2. **Definition of a "Suitable Peer":**
-        - **If the node is bootstrapping (has 0 active channels):** A peer is considered "suitable" if it has high connectivity. The liquidity source/sink status **MUST** be ignored for this initial step. The priority is to get connected.
+        - **If the node is bootstrapping (has 0 active channels):** A peer is considered "suitable" if it has high connectivity (a high `total_peers` value from `get_mempool_top_nodes`). The liquidity source/sink status **MUST** be ignored for this initial step.
         - **If the node is established (has 1 or more active channels):** A peer is only "suitable" if it meets **both** of the following criteria: it is a **liquidity source** AND it has high connectivity.
     3. **Your final action is dictated by the number of suitable peers you have identified:**
         - **If your list contains two or more suitable peers, you MUST use the `batch_open_channel` tool.**
@@ -77,13 +70,12 @@ You are currently operating on the **{LND_NETWORK}** network.
     4. Before calling either channel opening tool, you MUST use `connect_peer` for every peer in your final list.
 
 - **Channel Redundancy Check:** Before attempting to open any new channel(s), you **MUST** call `list_lnd_channels` to ensure a channel with the target peer(s) does not already exist.
-- **Connection Prerequisite:** **Before opening a channel, you MUST first use `connect_peer` with the chosen peer's public key and a valid `host:port` address.** You can obtain the `host:port` from the `addresses` field within the node data returned by `get_node_availability_data`. This must be done for every peer, even when using `batch_open_channel`.
+
+- **Financial Safety Check:** Before calling `open_channel` or `batch_open_channel`, you **MUST** first call `get_lnd_wallet_balance`. You must ensure that the total funding amount you intend to use is less than the `confirmed_balance` minus a 100,000 satoshi anchor reserve. If the available balance is insufficient, you MUST either reduce the number or size of the channels, or abort the operation and report the lack of funds.
+
+- **Connection Prerequisite:** **Before opening a channel, you MUST first use `connect_peer` with the chosen peer's public key and a valid `host:port` address.** You can obtain the `host:port` from the `addresses` field within the node data returned by `get_mempool_top_nodes`. This must be done for every peer, even when using `batch_open_channel`.
 - **Channel Funding:** After successfully connecting, you *must* propose opening a channel with the selected peer(s). For `local_funding_amount_sat`, you *must* use a value that is at least 5,000,000 satoshis. Aim to fund channels with a portion of the total `walletbalance` or a calculated fraction that leaves room for at least 3-5 more channels) to allow for diversification and future channel openings.
 - **Fee Rate:** Before opening a channel, you **MUST** call `get_fee_recommendations` and use the `economyFee` value for the `sat_per_vbyte` parameter in the `open_channel` or `batch_open_channel` call.
-
-**External Data Sources:**
-- Use `get_node_availability_data` to fetch and *summarize* external JSON data about node availability and scores from specified URLs. This tool is designed to handle large datasets by providing key statistics and top-node summaries, and it internally stores the full raw data of all scored nodes for subsequent detailed analysis.
-- Use `analyze_peer_network` to recursively explore the network around a specific peer, helping to identify highly connected nodes for strategic channel openings. Limit `max_depth` to 3 and `peers_per_level` to 3 to manage token usage.
 
 **Response Style:** Your textual responses should be extremely concise! Focus on direct observations and actionable recommendations when not calling tools.
 """
@@ -96,7 +88,7 @@ def main():
 
     chat = model.start_chat(history=[{"role": "user", "parts": [SYSTEM_PROMPT]}])
 
-    current_user_message = "Perform a comprehensive assessment of the LND node's current state, including its on-chain balance. Identify any immediate actions required for liquidity and channel management. Consider using `get_node_availability_data` to fetch external node scores if relevant for peer selection. After identifying a potential peer, use `analyze_peer_network` to understand its connectivity before opening a channel."
+    current_user_message = "Perform a comprehensive assessment of the LND node's current state, including its on-chain balance. Identify any immediate actions required for liquidity and channel management. Consider using `get_mempool_top_nodes` to fetch external node scores if relevant for peer selection."
 
     while True:
         try:
@@ -174,8 +166,7 @@ def main():
                             "batch_open_channel": lnd_client.batch_open_channel,
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
-                            "get_node_availability_data": get_node_availability_data,
-                            "analyze_peer_network": analyze_peer_network,
+                            "get_mempool_top_nodes": get_mempool_top_nodes,
                             "get_node_channels_from_mempool": get_node_channels_from_mempool,
                             "get_fee_recommendations": get_fee_recommendations,
                             "list_lnd_channels": lnd_client.list_lnd_channels,

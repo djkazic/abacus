@@ -9,6 +9,6 @@ This repo is for an autonomous LND agent. It has the capability to look for pote
 - `main.py` is the main entry point
 - `state.py` holds the global data store and token counter var
 - `tools/` is a directory holding the code for the agent's tools
-- `tools/network_analysis_tools.py` has tools for fetching node availability and network analysis.
+- `tools/network_analysis_tools.py` has tools for fetching node rankings.
 - `tools/mempool_space_tools.py` has mempool.space API tools for fee recommendations and channel lookups.
 - `tools/lnd_tools.py` has LND gRPC based tools
