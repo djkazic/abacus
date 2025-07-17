@@ -54,6 +54,10 @@ open_channel_declaration = FunctionDeclaration(
                 "type": "integer",
                 "description": "Optional: The amount of satoshis to push to the counterparty at channel opening (default 0).",
             },
+            "sat_per_vbyte": {
+                "type": "integer",
+                "description": "Optional: The fee rate in satoshis per virtual byte for the funding transaction.",
+            },
         },
         "required": ["node_pubkey", "local_funding_amount_sat"],
     },

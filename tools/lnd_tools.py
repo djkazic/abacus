@@ -172,28 +172,45 @@ class LNDClient:
         }
 
     def open_channel(
-        self, node_pubkey: str, local_funding_amount_sat: int, push_amount_sat: int = 0
+        self,
+        node_pubkey: str,
+        local_funding_amount_sat: int,
+        push_amount_sat: int = 0,
+        sat_per_vbyte: int = 0,
     ) -> dict:
         """
-        Dummy function to simulate opening a new channel with a peer.
-        In a real scenario, this would interact with the LND node to open a channel.
+        Opens a new channel with a peer using gRPC.
         """
-        confirmation = input(
-            f"Are you sure you want to open a channel with {node_pubkey} for {local_funding_amount_sat} sats? (yes/no): "
-        )
-        if confirmation.lower() != "yes":
-            return {
-                "status": "CANCELLED",
-                "message": "Channel opening cancelled by user.",
-            }
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
 
-        print(
-            f"Dummy: Opening channel with {node_pubkey}: local_funding_amount_sat={local_funding_amount_sat}, push_amount_sat={push_amount_sat}"
-        )
-        return {
-            "status": "OK",
-            "message": f"Channel with {node_pubkey} opened (dummy).",
-        }
+        try:
+            request = ln.OpenChannelRequest(
+                node_pubkey=bytes.fromhex(node_pubkey),
+                local_funding_amount=local_funding_amount_sat,
+                push_sat=push_amount_sat,
+                sat_per_vbyte=sat_per_vbyte,
+            )
+            # Use OpenChannelSync for a synchronous response.
+            response = self.stub.OpenChannelSync(request)
+            # The response for OpenChannelSync is a ChannelPoint
+            funding_txid = response.funding_txid_str
+            output_index = response.output_index
+            return {
+                "status": "OK",
+                "data": {
+                    "funding_txid": funding_txid,
+                    "output_index": output_index,
+                    "channel_point": f"{funding_txid}:{output_index}",
+                },
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error opening channel: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
     def list_lnd_peers(self) -> dict:
         """
