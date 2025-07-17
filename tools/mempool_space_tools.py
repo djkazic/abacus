@@ -34,7 +34,14 @@ def get_node_channels_from_mempool(pubkey: str) -> dict:
         channels = response.json()
 
         if not channels:
-            return {"status": "OK", "data": {"pubkey": pubkey, "num_channels": 0, "average_fee_rate_ppm": "N/A"}}
+            return {
+                "status": "OK",
+                "data": {
+                    "pubkey": pubkey,
+                    "num_channels": 0,
+                    "average_fee_rate_ppm": "N/A",
+                },
+            }
 
         total_fee_rate = 0
         for channel in channels:
@@ -53,7 +60,7 @@ def get_node_channels_from_mempool(pubkey: str) -> dict:
                 "alias": alias,
                 "num_channels": len(channels),
                 "average_fee_rate_ppm": average_fee_rate,
-            }
+            },
         }
     except requests.exceptions.RequestException as e:
         return {"status": "ERROR", "message": f"Failed to fetch data from {url}: {e}"}

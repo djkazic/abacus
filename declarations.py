@@ -68,7 +68,7 @@ list_lnd_peers_declaration = FunctionDeclaration(
 list_lnd_channels_declaration = FunctionDeclaration(
     name="list_lnd_channels",
     description="Lists information about this node's channels.",
-    parameters={"type": "object", "properties": {}}
+    parameters={"type": "object", "properties": {}},
 )
 
 search_documents_declaration = FunctionDeclaration(

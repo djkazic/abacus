@@ -1,6 +1,7 @@
 import requests
 from config import LND_NETWORK
 
+
 def get_mempool_top_nodes(limit: int = 10) -> dict:
     """
     Fetches a list of top nodes from mempool.space, then enriches them with
@@ -19,11 +20,14 @@ def get_mempool_top_nodes(limit: int = 10) -> dict:
         top_by_channels = rankings.get("topByChannels", [])
 
         if not top_by_channels:
-            return {"status": "ERROR", "message": "Could not retrieve top nodes by channel count."}
+            return {
+                "status": "ERROR",
+                "message": "Could not retrieve top nodes by channel count.",
+            }
 
         # Step 2: Enrich with details
         enriched_nodes = []
-        for i, node in enumerate(top_by_channels[:int(limit)]):
+        for i, node in enumerate(top_by_channels[: int(limit)]):
             pubkey = node.get("publicKey")
             if not pubkey:
                 continue
@@ -33,17 +37,21 @@ def get_mempool_top_nodes(limit: int = 10) -> dict:
             if details_response.status_code == 200:
                 details = details_response.json()
                 # Synthesize a score
-                score = details.get("active_channel_count", 0) * int(details.get("capacity", 0))
+                score = details.get("active_channel_count", 0) * int(
+                    details.get("capacity", 0)
+                )
 
-                enriched_nodes.append({
-                    "rank": i + 1,
-                    "pub_key": pubkey,
-                    "alias": details.get("alias", "N/A"),
-                    "score": score,
-                    "total_capacity": int(details.get("capacity", 0)),
-                    "total_peers": details.get("active_channel_count", 0),
-                    "addresses": [details.get("sockets", "")]
-                })
+                enriched_nodes.append(
+                    {
+                        "rank": i + 1,
+                        "pub_key": pubkey,
+                        "alias": details.get("alias", "N/A"),
+                        "score": score,
+                        "total_capacity": int(details.get("capacity", 0)),
+                        "total_peers": details.get("active_channel_count", 0),
+                        "addresses": [details.get("sockets", "")],
+                    }
+                )
 
         # Sort by our synthesized score
         enriched_nodes.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -54,6 +62,9 @@ def get_mempool_top_nodes(limit: int = 10) -> dict:
         }
 
     except requests.exceptions.RequestException as e:
-        return {"status": "ERROR", "message": f"Failed to fetch data from mempool.space: {e}"}
+        return {
+            "status": "ERROR",
+            "message": f"Failed to fetch data from mempool.space: {e}",
+        }
     except Exception as e:
         return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}

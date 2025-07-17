@@ -178,10 +178,24 @@ class LNDClient:
         sat_per_vbyte: int = 0,
     ) -> dict:
         """
-        Opens a new channel with a peer using gRPC.
+        Opens a new channel with a peer using gRPC after performing a budget check.
         """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        # Programmatic safety check
+        balance_response = self.get_lnd_wallet_balance()
+        if balance_response["status"] != "OK":
+            return balance_response
+
+        confirmed_balance = int(balance_response["data"]["confirmed_balance"])
+        available_balance = confirmed_balance - 1000000  # 1M satoshi reserve
+
+        if int(local_funding_amount_sat) > available_balance:
+            return {
+                "status": "ERROR",
+                "message": f"Insufficient funds. Requested: {local_funding_amount_sat}, Available: {available_balance}",
+            }
 
         try:
             request = ln.OpenChannelRequest(
@@ -217,10 +231,28 @@ class LNDClient:
         sat_per_vbyte: int = 0,
     ) -> dict:
         """
-        Opens multiple channels in a single transaction.
+        Opens multiple channels in a single transaction after performing a budget check.
         """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        # Programmatic safety check
+        balance_response = self.get_lnd_wallet_balance()
+        if balance_response["status"] != "OK":
+            return balance_response  # Propagate the error
+
+        confirmed_balance = int(balance_response["data"]["confirmed_balance"])
+        available_balance = confirmed_balance - 1000000  # 1M satoshi reserve
+
+        total_funding_amount = sum(
+            int(ch["local_funding_amount_sat"]) for ch in channels
+        )
+
+        if total_funding_amount > available_balance:
+            return {
+                "status": "ERROR",
+                "message": f"Insufficient funds. Requested: {total_funding_amount}, Available: {available_balance}",
+            }
 
         batch_channels = []
         for ch in channels:
