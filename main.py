@@ -22,12 +22,11 @@ from declarations import tools
 
 # Import tool implementations
 from tools.lnd_tools import LNDClient
-from tools.amboss_tools import (
+from tools.network_analysis_tools import (
     get_node_availability_data,
     analyze_peer_network,
-    get_node_channels_from_amboss,
 )
-from tools.mempool_space_tools import get_fee_recommendations
+from tools.mempool_space_tools import get_fee_recommendations, get_node_channels_from_mempool
 
 # Import the TUI
 from tui import TUI
@@ -55,14 +54,13 @@ SYSTEM_PROMPT = """You are an autonomous Lightning Network agent. Your core miss
     2.  For **EACH** of these promising candidate peers, you *must* use `analyze_peer_network` on its `pub_key`. This analysis will reveal its broader network connectivity, including its direct and indirect peers.
     3.  A well-connected peer typically has at least 5 existing channels and a high score. When calling `analyze_peer_network`, limit `max_depth` to 3 and `peers_per_level` to 3 to manage token usage.
 - **Liquidity Sink/Source Analysis:**
-    1.  After performing `analyze_peer_network` on your top candidates, you **MUST** call `get_node_channels_from_amboss` for **each of them** to retrieve their detailed channel fee policies.
-    2.  **Inferring Liquidity Behavior:**
-        * **From Outbound Fees (your perspective):** If a peer has a consistently *high* `fee_rate_milli_msat` for its *outbound* channels (meaning it charges a lot to send funds out), it is likely trying to *retain* outbound liquidity and acts as a **liquidity sink**. If it has consistently *low* outbound fees (e.g., < 100 ppm), it is likely trying a **liquidity source**.
-        * **From Inbound Fees (peer's perspective, your outbound):** If a peer charges *high* `inbound_fee_rate_milli_msat` for its channels (meaning it's expensive for others to send funds to it), it's trying to *retain* inbound liquidity. If it charges *low* inbound fees, it's trying to *gain* inbound liquidity.
-        * **From Peers' Outbound Fees (recursive inference):** If the majority of a candidate peer's *own* channels (as seen in `get_node_channels_from_amboss` output) are connected to nodes that have *high outbound fees* (meaning those nodes are sinks), then the candidate peer itself is likely a **liquidity sink**. Conversely, if its channels are mostly to nodes with *low outbound fees* (sources), then the candidate peer is likely a **liquidity source**.
+    1.  After performing `analyze_peer_network` on your top candidates, you **MUST** call `get_node_channels_from_mempool` for **each of them** to retrieve their detailed channel fee policies.
+    2.  **Inferring Liquidity Behavior:** The `get_node_channels_from_mempool` tool returns a list of channels. For each channel, the `fee_rate` is the outbound fee rate for the peer you are analyzing.
+        - A peer is a **liquidity sink** if the average `fee_rate` across all its channels is high (e.g., > 500 ppm).
+        - A peer is a **liquidity source** if the average `fee_rate` is low (e.g., < 100 ppm).
 
 - **Peer Selection and Final Action:**
-    1. After gathering all data (`analyze_peer_network` and `get_node_channels_from_amboss` for all candidates), you will create a final list of suitable peers based on the node's current state.
+    1. After gathering all data (`analyze_peer_network` and `get_node_channels_from_mempool` for all candidates), you will create a final list of suitable peers based on the node's current state.
     2. **Definition of a "Suitable Peer":**
         - **If the node is bootstrapping (has 0 active channels):** A peer is considered "suitable" if it has high connectivity. The liquidity source/sink status **MUST** be ignored for this initial step. The priority is to get connected.
         - **If the node is established (has 1 or more active channels):** A peer is only "suitable" if it meets **both** of the following criteria: it is a **liquidity source** AND it has high connectivity.
@@ -172,7 +170,7 @@ def main():
                             "connect_peer": lnd_client.connect_peer,
                             "get_node_availability_data": get_node_availability_data,
                             "analyze_peer_network": analyze_peer_network,
-                            "get_node_channels_from_amboss": get_node_channels_from_amboss,
+                            "get_node_channels_from_mempool": get_node_channels_from_mempool,
                             "get_fee_recommendations": get_fee_recommendations,
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                         }

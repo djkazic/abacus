@@ -181,23 +181,15 @@ analyze_peer_network_declaration = FunctionDeclaration(
     },
 )
 
-get_node_channels_from_amboss_declaration = FunctionDeclaration(
-    name="get_node_channels_from_amboss",
-    description="Fetches detailed channel information for a given Lightning Network node from Amboss.space, including fee policies for both sides of each channel. This data is crucial for inferring liquidity sink/source characteristics.",
+get_node_channels_from_mempool_declaration = FunctionDeclaration(
+    name="get_node_channels_from_mempool",
+    description="Fetches detailed channel information for a given Lightning Network node from mempool.space.",
     parameters={
         "type": "object",
         "properties": {
             "pubkey": {
                 "type": "string",
                 "description": "The public key of the node to query channel details for.",
-            },
-            "limit": {
-                "type": "integer",
-                "description": "Optional: The maximum number of channels to retrieve (default is 10).",
-            },
-            "offset": {
-                "type": "integer",
-                "description": "Optional: The offset for pagination (default is 0).",
             },
         },
         "required": ["pubkey"],
@@ -266,7 +258,7 @@ tools = [
     Tool(function_declarations=[get_node_availability_data_declaration]),
     Tool(function_declarations=[connect_peer_declaration]),
     Tool(function_declarations=[analyze_peer_network_declaration]),
-    Tool(function_declarations=[get_node_channels_from_amboss_declaration]),
+    Tool(function_declarations=[get_node_channels_from_mempool_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
     Tool(function_declarations=[batch_open_channel_declaration]),
