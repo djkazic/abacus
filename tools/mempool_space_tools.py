@@ -1,5 +1,6 @@
 import requests
 from config import LND_NETWORK
+import concurrent.futures
 
 
 def get_fee_recommendations():
@@ -18,7 +19,7 @@ def get_fee_recommendations():
     return response.json()
 
 
-def get_node_channels_from_mempool(pubkey: str) -> dict:
+def _get_node_channels_from_mempool(pubkey: str) -> dict:
     """
     Fetches detailed channel information for a given Lightning Network node from mempool.space,
     and returns a summary of their fee policies.
@@ -27,7 +28,7 @@ def get_node_channels_from_mempool(pubkey: str) -> dict:
     if LND_NETWORK == "testnet":
         base_url += "/testnet"
 
-    url = f"{base_url}/api/v1/lightning/channels?public_key={pubkey}&status=active&index=-1"
+    url = f"{base_url}/api/v1/lightning/channels?public_key={pubkey}&status=active&index=0"
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -66,3 +67,12 @@ def get_node_channels_from_mempool(pubkey: str) -> dict:
         return {"status": "ERROR", "message": f"Failed to fetch data from {url}: {e}"}
     except Exception as e:
         return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+
+def batch_get_node_channels_from_mempool(pubkeys: list[str]) -> dict:
+    """
+    Fetches channel information for multiple nodes in parallel.
+    """
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = list(executor.map(_get_node_channels_from_mempool, pubkeys))
+    return {"results": results}

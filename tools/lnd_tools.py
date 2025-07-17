@@ -2,6 +2,8 @@ import codecs
 import os
 
 import grpc
+from google.protobuf.json_format import MessageToDict
+
 
 try:
     import lightning_pb2 as ln
@@ -84,38 +86,7 @@ class LNDClient:
 
         try:
             response = self.stub.GetInfo(ln.GetInfoRequest())
-            info_dict = {
-                "version": response.version,
-                "commit_hash": response.commit_hash,
-                "identity_pubkey": response.identity_pubkey,
-                "alias": response.alias,
-                "color": response.color,
-                "num_pending_channels": response.num_pending_channels,
-                "num_active_channels": response.num_active_channels,
-                "num_inactive_channels": response.num_inactive_channels,
-                "num_peers": response.num_peers,
-                "block_height": response.block_height,
-                "block_hash": response.block_hash,
-                "best_header_timestamp": response.best_header_timestamp,
-                "synced_to_chain": response.synced_to_chain,
-                "synced_to_graph": response.synced_to_graph,
-                "testnet": response.testnet,
-                "chains": [
-                    {"chain": c.chain, "network": c.network} for c in response.chains
-                ],
-                "uris": list(response.uris),
-                "features": {
-                    str(k): {
-                        "name": v.name,
-                        "is_required": v.is_required,
-                        "is_known": v.is_known,
-                    }
-                    for k, v in response.features.items()
-                },
-                "require_htlc_interceptor": response.require_htlc_interceptor,
-                "store_final_htlc_resolutions": response.store_final_htlc_resolutions,
-            }
-            return {"status": "OK", "data": info_dict}
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -131,11 +102,7 @@ class LNDClient:
 
         try:
             response = self.stub.WalletBalance(ln.WalletBalanceRequest())
-            balance_dict = {
-                "total_balance": str(response.total_balance),
-                "confirmed_balance": str(response.confirmed_balance),
-            }
-            return {"status": "OK", "data": balance_dict}
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -194,17 +161,7 @@ class LNDClient:
             )
             # Use OpenChannelSync for a synchronous response.
             response = self.stub.OpenChannelSync(request)
-            # The response for OpenChannelSync is a ChannelPoint
-            funding_txid = response.funding_txid_str
-            output_index = response.output_index
-            return {
-                "status": "OK",
-                "data": {
-                    "funding_txid": funding_txid,
-                    "output_index": output_index,
-                    "channel_point": f"{funding_txid}:{output_index}",
-                },
-            }
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -258,18 +215,7 @@ class LNDClient:
                 sat_per_vbyte=int(sat_per_vbyte),
             )
             response = self.stub.BatchOpenChannel(request)
-            return {
-                "status": "OK",
-                "data": {
-                    "pending_channels": [
-                        {
-                            "txid": p.txid.hex(),
-                            "output_index": int(p.output_index),
-                        }
-                        for p in response.pending_channels
-                    ]
-                },
-            }
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -290,37 +236,7 @@ class LNDClient:
         print("Fetching LND peers via gRPC...")
         try:
             response = self.stub.ListPeers(ln.ListPeersRequest())
-            peers_list = []
-            for peer in response.peers:
-                peers_list.append(
-                    {
-                        "pub_key": peer.pub_key,
-                        "alias": peer.alias or "N/A",
-                        "channels": peer.num_channels,
-                        "total_capacity_sat": str(peer.total_capacity),
-                        "address": peer.address,
-                        "bytes_sent": str(peer.bytes_sent),
-                        "bytes_recv": str(peer.bytes_recv),
-                        "sat_sent": str(peer.sat_sent),
-                        "sat_recv": str(peer.sat_recv),
-                        "inbound": peer.inbound,
-                        "ping_time": str(peer.ping_time),
-                        "sync_type": ln.Peer.SyncType.Name(peer.sync_type),
-                        "features": {
-                            str(k): {
-                                "name": v.name,
-                                "is_required": v.is_required,
-                                "is_known": v.is_known,
-                            }
-                            for k, v in peer.features.items()
-                        },
-                    }
-                )
-            return {
-                "status": "OK",
-                "peers": peers_list,
-                "message": f"Found {len(peers_list)} connected peers.",
-            }
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -343,10 +259,7 @@ class LNDClient:
             request = ln.ConnectPeerRequest(addr=peer_address, perm=True)
             response = self.stub.ConnectPeer(request)
 
-            return {
-                "status": "OK",
-                "message": f"Successfully connected to peer {node_pubkey} at {host_port}.",
-            }
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -365,8 +278,7 @@ class LNDClient:
 
         try:
             response = self.state_stub.GetState(state_service.GetStateRequest())
-            state_str = state_service.WalletState.Name(response.state)
-            return {"status": "OK", "data": {"state": state_str}}
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
@@ -382,55 +294,7 @@ class LNDClient:
 
         try:
             response = self.stub.ListChannels(ln.ListChannelsRequest())
-            channels_list = []
-            for channel in response.channels:
-                channels_list.append(
-                    {
-                        "active": channel.active,
-                        "remote_pubkey": channel.remote_pubkey,
-                        "channel_point": channel.channel_point,
-                        "chan_id": channel.chan_id,
-                        "capacity": str(channel.capacity),
-                        "local_balance": str(channel.local_balance),
-                        "remote_balance": str(channel.remote_balance),
-                        "commit_fee": str(channel.commit_fee),
-                        "commit_weight": str(channel.commit_weight),
-                        "fee_per_kw": str(channel.fee_per_kw),
-                        "unsettled_balance": str(channel.unsettled_balance),
-                        "total_satoshis_sent": str(channel.total_satoshis_sent),
-                        "total_satoshis_received": str(channel.total_satoshis_received),
-                        "num_updates": str(channel.num_updates),
-                        "pending_htlcs": [
-                            {
-                                "incoming": htlc.incoming,
-                                "amount": str(htlc.amount),
-                                "hash_lock": htlc.hash_lock.hex(),
-                                "expiration_height": htlc.expiration_height,
-                            }
-                            for htlc in channel.pending_htlcs
-                        ],
-                        "csv_delay": channel.csv_delay,
-                        "private": channel.private,
-                        "initiator": channel.initiator,
-                        "chan_status_flags": channel.chan_status_flags,
-                        "local_chan_reserve_sat": str(channel.local_chan_reserve_sat),
-                        "remote_chan_reserve_sat": str(channel.remote_chan_reserve_sat),
-                        "static_remote_key": channel.static_remote_key,
-                        "commitment_type": ln.CommitmentType.Name(
-                            channel.commitment_type
-                        ),
-                        "lifetime": str(channel.lifetime),
-                        "uptime": str(channel.uptime),
-                        "close_address": channel.close_address,
-                        "push_amount_sat": str(channel.push_amount_sat),
-                        "thaw_height": channel.thaw_height,
-                    }
-                )
-            return {
-                "status": "OK",
-                "channels": channels_list,
-                "message": f"Found {len(channels_list)} open channels.",
-            }
+            return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",

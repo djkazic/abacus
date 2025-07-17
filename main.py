@@ -27,7 +27,7 @@ from tools.lnd_tools import LNDClient
 from tools.network_analysis_tools import get_mempool_top_nodes
 from tools.mempool_space_tools import (
     get_fee_recommendations,
-    get_node_channels_from_mempool,
+    batch_get_node_channels_from_mempool,
 )
 
 # Import the TUI
@@ -64,7 +64,7 @@ SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on t
     - Use `get_mempool_top_nodes` to get a list of potential peers.
 
 2.  **Filter for Suitable Peers:**
-    - For each candidate, use `get_node_channels_from_mempool` to check their average fee rate.
+    - For all candidates, use `batch_get_node_channels_from_mempool` to check their average fee rates in a single call.
     - **Define "Suitable":**
         - **If Bootstrapping (0 active channels):** A peer is suitable if it has high connectivity (`total_peers`). Liquidity status is ignored.
         - **If Established (1+ active channels):** A peer is suitable if it has high connectivity **AND** is a liquidity source (`average_fee_rate_ppm` < 100).
@@ -86,6 +86,16 @@ SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on t
         - If you have 1 peer, use `open_channel`.
         - If you have 0 peers, report that none were suitable and stop.
 """
+
+
+def _convert_args_to_dict(args):
+    """Recursively converts protobuf MapComposite and RepeatedComposite objects to JSON-serializable dicts and lists."""
+    if hasattr(args, "items"):  # Dict-like
+        return {key: _convert_args_to_dict(value) for key, value in args.items()}
+    elif hasattr(args, "__iter__") and not isinstance(args, str):  # List-like
+        return [_convert_args_to_dict(item) for item in args]
+    else:
+        return args
 
 
 def main():
@@ -138,15 +148,7 @@ def main():
                 for function_call in function_calls_to_execute:
                     time.sleep(1)
                     function_name = function_call.name
-                    function_args = dict(function_call.args)
-
-                    if (
-                        function_name == "batch_open_channel"
-                        and "channels" in function_args
-                    ):
-                        function_args["channels"] = [
-                            dict(item) for item in function_args["channels"]
-                        ]
+                    function_args = _convert_args_to_dict(function_call.args)
 
                     tui.display_tool_call(function_name, function_args)
 
@@ -177,7 +179,7 @@ def main():
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
                             "get_mempool_top_nodes": get_mempool_top_nodes,
-                            "get_node_channels_from_mempool": get_node_channels_from_mempool,
+                            "batch_get_node_channels_from_mempool": batch_get_node_channels_from_mempool,
                             "get_fee_recommendations": get_fee_recommendations,
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                         }

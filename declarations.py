@@ -178,18 +178,19 @@ analyze_peer_network_declaration = FunctionDeclaration(
     },
 )
 
-get_node_channels_from_mempool_declaration = FunctionDeclaration(
-    name="get_node_channels_from_mempool",
+batch_get_node_channels_from_mempool_declaration = FunctionDeclaration(
+    name="batch_get_node_channels_from_mempool",
     description="Fetches detailed channel information for a given Lightning Network node from mempool.space.",
     parameters={
         "type": "object",
         "properties": {
-            "pubkey": {
-                "type": "string",
-                "description": "The public key of the node to query channel details for.",
+            "pubkeys": {
+                "type": "array",
+                "description": "The public keys of the nodes to query channel details for.",
+                "items": {"type": "string"},
             },
         },
-        "required": ["pubkey"],
+        "required": ["pubkeys"],
     },
 )
 
@@ -251,7 +252,7 @@ tools = [
     Tool(function_declarations=[list_documents_by_type_declaration]),
     Tool(function_declarations=[get_mempool_top_nodes_declaration]),
     Tool(function_declarations=[connect_peer_declaration]),
-    Tool(function_declarations=[get_node_channels_from_mempool_declaration]),
+    Tool(function_declarations=[batch_get_node_channels_from_mempool_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
     Tool(function_declarations=[batch_open_channel_declaration]),
