@@ -206,6 +206,12 @@ get_lnd_state_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+get_fee_recommendations_declaration = FunctionDeclaration(
+    name="get_fee_recommendations",
+    description="Fetches recommended fee rates from mempool.space's API.",
+    parameters={"type": "object", "properties": {}},
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -221,6 +227,7 @@ tools = [
     Tool(function_declarations=[analyze_peer_network_declaration]),
     Tool(function_declarations=[get_node_channels_from_amboss_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
+    Tool(function_declarations=[get_fee_recommendations_declaration]),
 ]
 
 list_lnd_channels_declaration = FunctionDeclaration(

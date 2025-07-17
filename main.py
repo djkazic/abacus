@@ -27,6 +27,7 @@ from tools.amboss_tools import (
     analyze_peer_network,
     get_node_channels_from_amboss,
 )
+from tools.mempool_space_tools import get_fee_recommendations
 
 # Import the TUI
 from tui import TUI
@@ -152,6 +153,7 @@ def main():
                             "get_node_availability_data": get_node_availability_data,
                             "analyze_peer_network": analyze_peer_network,
                             "get_node_channels_from_amboss": get_node_channels_from_amboss,
+                            "get_fee_recommendations": get_fee_recommendations,
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                         }
 
