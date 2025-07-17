@@ -136,6 +136,7 @@ def main():
 
                 tool_responses_parts = []
                 for function_call in function_calls_to_execute:
+                    time.sleep(1)
                     function_name = function_call.name
                     function_args = dict(function_call.args)
 
