@@ -212,6 +212,53 @@ class LNDClient:
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
+    def batch_open_channel(
+        self,
+        channels: list,
+        sat_per_vbyte: int = 0,
+    ) -> dict:
+        """
+        Opens multiple channels in a single transaction.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        batch_channels = []
+        for ch in channels:
+            batch_channels.append(
+                ln.BatchOpenChannel(
+                    node_pubkey=bytes.fromhex(ch["node_pubkey"]),
+                    local_funding_amount=ch["local_funding_amount"],
+                    push_sat=ch.get("push_sat", 0),
+                )
+            )
+
+        try:
+            request = ln.BatchOpenChannelRequest(
+                channels=batch_channels,
+                sat_per_vbyte=sat_per_vbyte,
+            )
+            response = self.stub.BatchOpenChannel(request)
+            return {
+                "status": "OK",
+                "data": {
+                    "pending_channels": [
+                        {
+                            "txid": p.txid.hex(),
+                            "output_index": p.output_index,
+                        }
+                        for p in response.pending_channels
+                    ]
+                },
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error batch opening channels: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
     def list_lnd_peers(self) -> dict:
         """
         Fetches a list of connected peers from the LND node using gRPC.

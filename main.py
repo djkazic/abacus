@@ -72,6 +72,9 @@ SYSTEM_PROMPT = """You are an autonomous Lightning Network agent. Your core miss
 - **Channel Funding:** After successfully connecting, you *must* propose opening a channel with this selected peer. For `local_funding_amount_sat`, you *must* use a value that is at least 5,000,000 satoshis. Aim to fund channels with a portion of the total `walletbalance` or a calculated fraction that leaves room for at least 3-5 more channels) to allow for diversification and future channel openings.
 - **Fee Rate:** Before opening a channel, you **MUST** call `get_fee_recommendations` and use the `economyFee` value for the `sat_per_vbyte` parameter in the `open_channel` call.
 
+**Batch Channel Opening:**
+- If you identify multiple suitable peers for channel opening, you can use the `batch_open_channel` tool to open them all in a single transaction to save on-chain fees.
+
 **External Data Sources:**
 - Use `get_node_availability_data` to fetch and *summarize* external JSON data about node availability and scores from specified URLs. This tool is designed to handle large datasets by providing key statistics and top-node summaries, and it internally stores the full raw data of all scored nodes for subsequent detailed analysis.
 - Use `analyze_peer_network` to recursively explore the network around a specific peer, helping to identify highly connected nodes for strategic channel openings. Limit `max_depth` to 3 and `peers_per_level` to 3 to manage token usage.
@@ -131,7 +134,11 @@ def main():
                     tui.display_tool_call(function_name, function_args)
 
                     tool_output = {}
-                    sensitive_tools = ["open_channel", "set_fee_policy"]
+                    sensitive_tools = [
+                        "open_channel",
+                        "set_fee_policy",
+                        "batch_open_channel",
+                    ]
 
                     execute = True
                     if function_name in sensitive_tools:
@@ -149,6 +156,7 @@ def main():
                             "get_lnd_state": lnd_client.get_lnd_state,
                             "set_fee_policy": lnd_client.set_fee_policy,
                             "open_channel": lnd_client.open_channel,
+                            "batch_open_channel": lnd_client.batch_open_channel,
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
                             "get_node_availability_data": get_node_availability_data,

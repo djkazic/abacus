@@ -216,6 +216,43 @@ get_fee_recommendations_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+batch_open_channel_declaration = FunctionDeclaration(
+    name="batch_open_channel",
+    description="Opens multiple channels in a single transaction.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "channels": {
+                "type": "array",
+                "description": "A list of channels to open.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "node_pubkey": {
+                            "type": "string",
+                            "description": "The public key of the peer.",
+                        },
+                        "local_funding_amount": {
+                            "type": "integer",
+                            "description": "The amount of satoshis to commit.",
+                        },
+                        "push_sat": {
+                            "type": "integer",
+                            "description": "Optional: The amount of satoshis to push to the counterparty.",
+                        },
+                    },
+                    "required": ["node_pubkey", "local_funding_amount"],
+                },
+            },
+            "sat_per_vbyte": {
+                "type": "integer",
+                "description": "Optional: The fee rate in satoshis per virtual byte for the funding transaction.",
+            },
+        },
+        "required": ["channels"],
+    },
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -232,6 +269,7 @@ tools = [
     Tool(function_declarations=[get_node_channels_from_amboss_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
+    Tool(function_declarations=[batch_open_channel_declaration]),
 ]
 
 list_lnd_channels_declaration = FunctionDeclaration(
