@@ -5,6 +5,7 @@ import google.generativeai as genai
 import sys
 import select
 from collections import deque
+from google.api_core.retry import Retry
 
 # Import configurations
 from config import (
@@ -109,6 +110,8 @@ def main():
         "Assess the node's current state and take action if necessary."
     )
 
+    request_options = {"retry": Retry()}
+
     while True:
         try:
             tui.display_message("system", "--- TICK START ---")
@@ -120,7 +123,9 @@ def main():
 
             tui.start_live_display()
 
-            response = chat.send_message(current_user_message)
+            response = chat.send_message(
+                current_user_message, request_options=request_options
+            )
             total_tokens_used += response.usage_metadata.total_token_count
 
             current_response_parts = list(response.parts)
@@ -224,7 +229,8 @@ def main():
                     ]
 
                 next_response = chat.send_message(
-                    genai.protos.Content(parts=tool_responses_parts)
+                    genai.protos.Content(parts=tool_responses_parts),
+                    request_options=request_options,
                 )
                 total_tokens_used += next_response.usage_metadata.total_token_count
                 current_response_parts = list(next_response.parts)
