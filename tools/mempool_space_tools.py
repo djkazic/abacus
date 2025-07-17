@@ -1,5 +1,5 @@
 import requests
-from config import LND_NETWORK
+from config import LND_NETWORK, NODE_BLACKLIST
 import concurrent.futures
 
 
@@ -105,17 +105,21 @@ def get_top_and_filter_nodes(limit: int = 10) -> dict:
                 executor.map(_get_node_channels_from_mempool, pubkeys_to_check)
             )
 
-        # Filter out nodes with low fee rates
+        # Filter out nodes with low fee rates or in blacklist
         final_nodes = []
         for result in channel_results:
             if result.get("status") == "OK":
                 data = result.get("data", {})
+                pubkey = data.get("pubkey")
+
+                if pubkey in NODE_BLACKLIST:
+                    continue
+
                 avg_fee = data.get("average_fee_rate_ppm")
                 if isinstance(avg_fee, (int, float)) and avg_fee <= 100:
                     continue  # Skip nodes with low or zero fees
 
                 # If the node is suitable, fetch its full details
-                pubkey = data.get("pubkey")
                 details_url = f"{base_url}/api/v1/lightning/nodes/{pubkey}"
                 details_response = requests.get(details_url)
                 if details_response.status_code == 200:

@@ -16,3 +16,9 @@ LND_NETWORK = os.getenv("LND_NETWORK", "mainnet")
 LND_ADMIN_MACAROON_PATH = os.getenv(
     "LND_ADMIN_MACAROON_PATH", f"/lnd/data/chain/bitcoin/{LND_NETWORK}/admin.macaroon"
 )
+
+# --- Node Blacklist ---
+# Nodes that can trigger edge cases for deploying liquidity
+NODE_BLACKLIST = [
+    "0364913d18a19c671bb36dd04d6ad5be0fe8f2894314c36a9db3f03c2d414907e1",  # 20M minimum chan size
+]

@@ -55,36 +55,28 @@ SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on t
 **Primary Workflow:**
 
 1.  **Assess On-Chain Capital:**
-    - Your first step is to call `get_lnd_wallet_balance` to get the `confirmedBalance`.
+    - Your first step is to call `get_lnd_wallet_balance` to get the `confirmed_balance`.
 
 2.  **Strategic Decision:**
-    - **If `confirmedBalance` is less than or equal to 1,000,000 sats:** Your on-chain wallet balance is healthy. Report this and end your turn.
-    - **If `confirmedBalance` is greater than 1,000,000 sats:** You have idle capital to deploy. You **MUST** proceed to the "Channel Opening Workflow".
+    - **If `confirmed_balance` is less than or equal to 1,000,000 sats:** Your on-chain wallet balance is healthy. Report this and end your turn.
+    - **If `confirmed_balance` is greater than 1,000,000 sats:** You have idle capital to deploy. You **MUST** proceed to the "Channel Opening Workflow".
 
 **Channel Opening Workflow (ONLY execute if you have idle capital):**
 
 1.  **Identify and Filter Candidate Peers:**
-    - Use `get_top_and_filter_nodes` to get a list of 10 potential peers, automatically filtered for suitability (fee rates > 100 ppm).
+    - Use `get_top_and_filter_nodes` to get a list of 16 potential peers, automatically filtered for suitability (fee rates > 100 ppm and not in the node blacklist).
     - **Define "Suitable":**
         - **If Bootstrapping (0 active channels):** A peer is suitable if it has high connectivity (`total_peers`).
         - **If Established (1+ active channels):** A peer is suitable if it has high connectivity **AND** is a liquidity source (`average_fee_rate_ppm` < 1000).
     - Create a final list of all suitable peers from the tool's output.
 
-3.  **Pre-Execution Safety Checks (MANDATORY):**
-    - **Check for Duplicates:** Use `list_lnd_channels` to remove any peers you already have a channel with.
-    - **Financial Safety:**
-        1. Call `get_lnd_wallet_balance` (if you haven't already).
-        2. Calculate `available_funds` = `confirmedBalance` - 1,000,000 sats.
-        3. Calculate `per_channel_amount` = `available_funds` / number of peers in your final list.
-        4. If `per_channel_amount` is less than 5,000,000 sats, you **MUST** reduce the number of peers (starting with the lowest-ranked) and recalculate until the minimum is met.
-    - **Connect to Peers:** For every peer in your final, budgeted list, you **MUST** call the `batch_connect_peers` function. This is a pre-emptive step to ensure connectivity. **IMPORTANT:** A failure to connect to a peer in this step does **NOT** disqualify them from the channel opening process. The subsequent `open_channel` or `batch_open_channel` call will establish the connection if needed. The only reason to disqualify a peer at this stage is if you already have an open channel with them, which you should have already checked using `list_lnd_channels`.
+2.  **Pre-Execution Safety Checks (MANDATORY):**
+    - **Check for Duplicates:** Use `list_lnd_channels` to remove any peers you already have a channel with from your list of candidates.
+    - **Connect to Peers:** For every peer in your final, budgeted list, you **MUST** call the `batch_connect_peers` function. This is a pre-emptive step to ensure connectivity. **IMPORTANT:** A failure to connect to a peer in this step does **NOT** disqualify them from the channel opening process.
 
-4.  **Execute Action:**
-    - **Get Fee Rate:** Call `get_fee_recommendations` and use the `economyFee` for the `sat_per_vbyte` parameter.
-    - **Open Channels:**
-        - If you have 2 or more peers in your final list, use `batch_open_channel`, passing the calculated `per_channel_amount` and the `sat_per_vbyte` from the previous step.
-        - If you have 1 peer, use `open_channel`, passing the `per_channel_amount` and `sat_per_vbyte`.
-        - If you have 0 peers, report that none were suitable and stop.
+3.  **Execute Action:**
+    - **Get Fee Rate:** Call `get_fee_recommendations` and get the `economyFee`.
+    - **Open Channels:** Call `prepare_and_open_channels` with the final list of peer candidates and the `economyFee` as the `sat_per_vbyte`.
 """
 
 
@@ -128,8 +120,10 @@ def main():
                 )
             except StopCandidateException as e:
                 tui.stop_live_display()
-                tui.display_error(f"Model stopped with reason: {e.finish_reason}")
-                tui.display_error(f"Candidate: {e.candidate}")
+                tui.display_error(
+                    f"Model stopped with reason: {e.args[0].finish_reason.name}"
+                )
+                tui.display_error(f"Candidate content: {e.args[0].content}")
                 continue
             total_tokens_used += response.usage_metadata.total_token_count
 
@@ -164,9 +158,8 @@ def main():
 
                     tool_output = {}
                     sensitive_tools = [
-                        "open_channel",
+                        "prepare_and_open_channels",
                         "set_fee_policy",
-                        "batch_open_channel",
                     ]
 
                     execute = True
@@ -184,8 +177,7 @@ def main():
                             "get_lnd_wallet_balance": lnd_client.get_lnd_wallet_balance,
                             "get_lnd_state": lnd_client.get_lnd_state,
                             "set_fee_policy": lnd_client.set_fee_policy,
-                            "open_channel": lnd_client.open_channel,
-                            "batch_open_channel": lnd_client.batch_open_channel,
+                            "prepare_and_open_channels": lnd_client.prepare_and_open_channels,
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
                             "batch_connect_peers": lnd_client.batch_connect_peers,
@@ -240,8 +232,10 @@ def main():
                     )
                 except StopCandidateException as e:
                     tui.stop_live_display()
-                    tui.display_error(f"Model stopped with reason: {e.finish_reason}")
-                    tui.display_error(f"Candidate: {e.candidate}")
+                    tui.display_error(
+                        f"Model stopped with reason: {e.args[0].finish_reason.name}"
+                    )
+                    tui.display_error(f"Candidate content: {e.args[0].content}")
                     current_response_parts = []
                     continue
                 total_tokens_used += next_response.usage_metadata.total_token_count

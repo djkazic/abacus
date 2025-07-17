@@ -36,26 +36,29 @@ set_fee_policy_declaration = FunctionDeclaration(
     },
 )
 
-open_channel_declaration = FunctionDeclaration(
-    name="open_channel",
-    description="Opens a new Lightning Network channel with a specified peer.",
+prepare_and_open_channels_declaration = FunctionDeclaration(
+    name="prepare_and_open_channels",
+    description="Calculates channel sizes, performs safety checks, and opens channels with a list of peers.",
     parameters={
         "type": "object",
         "properties": {
-            "node_pubkey": {
-                "type": "string",
-                "description": "The public key of the peer to open a channel with.",
-            },
-            "local_funding_amount_sat": {
-                "type": "integer",
-                "description": "The amount of satoshis to commit to the channel from the local node.",
+            "peers": {
+                "type": "array",
+                "description": "A list of peer objects to open channels with.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "pub_key": {"type": "string"},
+                    },
+                    "required": ["pub_key"],
+                },
             },
             "sat_per_vbyte": {
                 "type": "integer",
-                "description": "Optional: The fee rate in satoshis per virtual byte for the funding transaction.",
+                "description": "The fee rate in satoshis per virtual byte for the funding transaction.",
             },
         },
-        "required": ["node_pubkey", "local_funding_amount_sat"],
+        "required": ["peers", "sat_per_vbyte"],
     },
 )
 
@@ -190,39 +193,6 @@ get_fee_recommendations_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
-batch_open_channel_declaration = FunctionDeclaration(
-    name="batch_open_channel",
-    description="Opens multiple channels in a single transaction.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "channels": {
-                "type": "array",
-                "description": "A list of channels to open.",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "node_pubkey": {
-                            "type": "string",
-                            "description": "The public key of the peer.",
-                        },
-                        "local_funding_amount_sat": {
-                            "type": "integer",
-                            "description": "The amount of satoshis to commit.",
-                        },
-                    },
-                    "required": ["node_pubkey", "local_funding_amount_sat"],
-                },
-            },
-            "sat_per_vbyte": {
-                "type": "integer",
-                "description": "Optional: The fee rate in satoshis per virtual byte for the funding transaction.",
-            },
-        },
-        "required": ["channels"],
-    },
-)
-
 batch_connect_peers_declaration = FunctionDeclaration(
     name="batch_connect_peers",
     description="Connects to multiple Lightning Network peers in a batch.",
@@ -256,7 +226,7 @@ tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
     Tool(function_declarations=[set_fee_policy_declaration]),
-    Tool(function_declarations=[open_channel_declaration]),
+    Tool(function_declarations=[prepare_and_open_channels_declaration]),
     Tool(function_declarations=[list_lnd_peers_declaration]),
     Tool(function_declarations=[list_lnd_channels_declaration]),
     Tool(function_declarations=[search_documents_declaration]),
@@ -267,6 +237,5 @@ tools = [
     Tool(function_declarations=[connect_peer_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
-    Tool(function_declarations=[batch_open_channel_declaration]),
     Tool(function_declarations=[batch_connect_peers_declaration]),
 ]

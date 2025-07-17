@@ -126,31 +126,17 @@ class LNDClient:
             "message": f"Fee policy for channel {channel_id} set (dummy).",
         }
 
-    def open_channel(
+    def _internal_open_channel(
         self,
         node_pubkey: str,
         local_funding_amount_sat: int,
         sat_per_vbyte: int = 0,
     ) -> dict:
         """
-        Opens a new channel with a peer using gRPC after performing a budget check.
+        Opens a new channel with a peer using gRPC. Intended for internal use.
         """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
-
-        # Programmatic safety check
-        balance_response = self.get_lnd_wallet_balance()
-        if balance_response["status"] != "OK":
-            return balance_response
-
-        confirmed_balance = int(balance_response["data"]["confirmedBalance"])
-        available_balance = confirmed_balance - 1000000  # 1M satoshi reserve
-
-        if int(local_funding_amount_sat) > available_balance:
-            return {
-                "status": "ERROR",
-                "message": f"Insufficient funds. Requested: {local_funding_amount_sat}, Available: {available_balance}",
-            }
 
         try:
             request = ln.OpenChannelRequest(
@@ -159,7 +145,6 @@ class LNDClient:
                 push_sat=0,
                 sat_per_vbyte=int(sat_per_vbyte),
             )
-            # Use OpenChannelSync for a synchronous response.
             response = self.stub.OpenChannelSync(request)
             return {"status": "OK", "data": MessageToDict(response)}
         except grpc.RpcError as e:
@@ -170,34 +155,16 @@ class LNDClient:
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
-    def batch_open_channel(
+    def _internal_batch_open_channel(
         self,
         channels: list,
         sat_per_vbyte: int = 0,
     ) -> dict:
         """
-        Opens multiple channels in a single transaction after performing a budget check.
+        Opens multiple channels in a single transaction. Intended for internal use.
         """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
-
-        # Programmatic safety check
-        balance_response = self.get_lnd_wallet_balance()
-        if balance_response["status"] != "OK":
-            return balance_response  # Propagate the error
-
-        confirmed_balance = int(balance_response["data"]["confirmedBalance"])
-        available_balance = confirmed_balance - 1000000  # 1M satoshi reserve
-
-        total_funding_amount = sum(
-            int(ch["local_funding_amount_sat"]) for ch in channels
-        )
-
-        if total_funding_amount > available_balance:
-            return {
-                "status": "ERROR",
-                "message": f"Insufficient funds. Requested: {total_funding_amount}, Available: {available_balance}",
-            }
 
         batch_channels = []
         for ch in channels:
@@ -223,6 +190,82 @@ class LNDClient:
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def prepare_and_open_channels(self, peers: list, sat_per_vbyte: int) -> dict:
+        """
+        Calculates channel sizes, performs safety checks, and opens channels.
+        This tool is a higher-level abstraction that simplifies the channel opening process.
+        """
+        if not peers:
+            return {
+                "status": "ERROR",
+                "message": "No peers provided to open channels with.",
+            }
+
+        # 1. Financial Safety Check
+        balance_response = self.get_lnd_wallet_balance()
+        if balance_response.get("status") != "OK":
+            return balance_response
+
+        confirmed_balance = int(
+            balance_response.get("data", {}).get("confirmedBalance", 0)
+        )
+        if not confirmed_balance:
+            return {
+                "status": "ERROR",
+                "message": "Could not retrieve confirmed wallet balance.",
+            }
+
+        available_funds = confirmed_balance - 1000000  # 1M satoshi reserve
+
+        if available_funds <= 0:
+            return {
+                "status": "ERROR",
+                "message": "Insufficient funds for channel opening after reserve.",
+            }
+
+        # 2. Calculate per-channel amount and adjust peer list if necessary
+        num_peers = len(peers)
+        per_channel_amount = available_funds // num_peers
+
+        while per_channel_amount < 5000000 and num_peers > 0:
+            num_peers -= 1
+            if num_peers == 0:
+                return {
+                    "status": "OK",
+                    "message": "Budget too small to open any channels of the minimum size (5M sats).",
+                }
+            per_channel_amount = available_funds // num_peers
+
+        final_peers = peers[:num_peers]
+
+        # 3. Execute channel opening
+        if not final_peers:
+            return {
+                "status": "OK",
+                "message": "No suitable peers left after budget filtering.",
+            }
+
+        if len(final_peers) > 1:
+            # Batch open
+            channels_to_open = [
+                {
+                    "node_pubkey": peer["pub_key"],
+                    "local_funding_amount_sat": per_channel_amount,
+                }
+                for peer in final_peers
+            ]
+            return self._internal_batch_open_channel(
+                channels=channels_to_open, sat_per_vbyte=sat_per_vbyte
+            )
+        else:
+            # Single open
+            peer = final_peers[0]
+            return self._internal_open_channel(
+                node_pubkey=peer["pub_key"],
+                local_funding_amount_sat=per_channel_amount,
+                sat_per_vbyte=sat_per_vbyte,
+            )
 
     def list_lnd_peers(self) -> dict:
         """
