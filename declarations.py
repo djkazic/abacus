@@ -222,6 +222,12 @@ batch_connect_peers_declaration = FunctionDeclaration(
     },
 )
 
+analyze_channel_liquidity_flow_declaration = FunctionDeclaration(
+    name="analyze_channel_liquidity_flow",
+    description="Analyzes the liquidity flow of each channel over the last 7 days and provides a summary with the current balance and a liquidity trend.",
+    parameters={"type": "object", "properties": {}},
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -238,4 +244,5 @@ tools = [
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
     Tool(function_declarations=[batch_connect_peers_declaration]),
+    Tool(function_declarations=[analyze_channel_liquidity_flow_declaration]),
 ]

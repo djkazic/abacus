@@ -1,5 +1,6 @@
 import codecs
 import os
+import time
 
 import grpc
 from google.protobuf.json_format import MessageToDict
@@ -394,3 +395,50 @@ class LNDClient:
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def forwarding_history(self, days_to_check: int = 7) -> dict:
+        """
+        Fetches the forwarding history of the LND node over a specified period.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            now = time.time()
+            start_time = int(now - (days_to_check * 24 * 60 * 60))
+            all_events = []
+            index_offset = 0
+            max_events_per_page = 100  # LND's default is 100
+
+            while True:
+                request = ln.ForwardingHistoryRequest(
+                    start_time=start_time,
+                    index_offset=index_offset,
+                    num_max_events=max_events_per_page,
+                )
+                response = self.stub.ForwardingHistory(request)
+                response_data = MessageToDict(
+                    response, preserving_proto_field_name=True
+                )
+
+                events = response_data.get("forwarding_events", [])
+                all_events.extend(events)
+
+                if not events or len(events) < max_events_per_page:
+                    break
+
+                index_offset = response_data.get("last_offset_index", 0)
+                if index_offset == 0:  # Should not happen if there are more pages
+                    break
+
+            return {"status": "OK", "data": {"forwarding_events": all_events}}
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error fetching forwarding history: {e.details()}",
+            }
+        except Exception as e:
+            return {
+                "status": "ERROR",
+                "message": f"An unexpected error occurred: {e}",
+            }
