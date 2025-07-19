@@ -1,5 +1,14 @@
 from tools.lnd_tools import LNDClient
+from tools.loop_tools import LoopClient
 from collections import defaultdict
+import grpc
+from google.protobuf.json_format import MessageToDict
+from datetime import datetime, timedelta
+
+try:
+    import client_pb2 as looprpc
+except ImportError:
+    looprpc = None
 
 
 def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
@@ -22,30 +31,51 @@ def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
     channels = channels_response.get("data", {}).get("channels", [])
 
     # 3. Process Data
-    flow_by_channel = defaultdict(lambda: {"inbound_msat": 0, "outbound_msat": 0})
+    flow_by_channel = defaultdict(
+        lambda: {"inbound_msat": 0, "outbound_msat": 0, "last_forward_time": None}
+    )
 
     for event in forwarding_events:
         chan_id_in = event.get("chan_id_in")
         chan_id_out = event.get("chan_id_out")
         amt_in_msat = int(event.get("amt_in_msat", 0))
         amt_out_msat = int(event.get("amt_out_msat", 0))
+        timestamp_ns = int(event.get("timestamp_ns", 0))
+        event_time = datetime.fromtimestamp(timestamp_ns / 1e9)
 
         if chan_id_in:
             flow_by_channel[chan_id_in]["inbound_msat"] += amt_in_msat
+            if (
+                not flow_by_channel[chan_id_in]["last_forward_time"]
+                or event_time > flow_by_channel[chan_id_in]["last_forward_time"]
+            ):
+                flow_by_channel[chan_id_in]["last_forward_time"] = event_time
+
         if chan_id_out:
             flow_by_channel[chan_id_out]["outbound_msat"] += amt_out_msat
+            if (
+                not flow_by_channel[chan_id_out]["last_forward_time"]
+                or event_time > flow_by_channel[chan_id_out]["last_forward_time"]
+            ):
+                flow_by_channel[chan_id_out]["last_forward_time"] = event_time
 
     # 4. Generate Analysis
     analysis_results = []
+    two_days_ago = datetime.now() - timedelta(days=2)
+
     for channel in channels:
         chan_id = channel.get("chan_id")
         capacity = int(channel.get("capacity", 0))
         local_balance = int(channel.get("local_balance", 0))
         balance_ratio = local_balance / capacity if capacity > 0 else 0
 
-        flow = flow_by_channel.get(chan_id, {"inbound_msat": 0, "outbound_msat": 0})
+        flow = flow_by_channel.get(
+            chan_id,
+            {"inbound_msat": 0, "outbound_msat": 0, "last_forward_time": None},
+        )
         inbound_flow = flow["inbound_msat"]
         outbound_flow = flow["outbound_msat"]
+        last_forward_time = flow["last_forward_time"]
 
         trend = "stagnant"
         if inbound_flow > outbound_flow * 1.1:  # 10% tolerance
@@ -55,15 +85,124 @@ def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
         elif inbound_flow > 0 or outbound_flow > 0:
             trend = "balanced"
 
+        is_candidate = balance_ratio > 0.8
+        is_economical = last_forward_time is None or last_forward_time < two_days_ago
+        is_economical_candidate = is_candidate and is_economical
+
         analysis_results.append(
             {
                 "channel_id": chan_id,
                 "peer_alias": channel.get("peer_alias", "N/A"),
+                "local_balance": local_balance,
+                "capacity": capacity,
                 "balance_ratio": f"{balance_ratio:.2%}",
+                "is_loop_out_candidate": is_candidate,
+                "is_economical_loop_out_candidate": is_economical_candidate,
                 "liquidity_trend": trend,
                 "inbound_msat_7d": inbound_flow,
                 "outbound_msat_7d": outbound_flow,
+                "last_forward_time": (
+                    last_forward_time.isoformat() if last_forward_time else None
+                ),
             }
         )
 
     return {"status": "OK", "data": {"channel_analysis": analysis_results}}
+
+
+def _get_loop_out_quote(loop_client: LoopClient, amt_sat: int) -> dict:
+    """
+    Fetches a quote for a Loop Out swap.
+    """
+    if loop_client.stub is None:
+        return {"status": "ERROR", "message": "Loop gRPC client not initialized."}
+
+    try:
+        request = looprpc.QuoteRequest(amt=int(amt_sat))
+        response = loop_client.stub.LoopOutQuote(request)
+        response_data = MessageToDict(response, preserving_proto_field_name=True)
+        return {
+            "status": "OK",
+            "data": {
+                "swap_fee_sat": response_data.get("swap_fee_sat"),
+                "htlc_sweep_fee_sat": response_data.get("htlc_sweep_fee_sat"),
+            },
+        }
+    except grpc.RpcError as e:
+        return {
+            "status": "ERROR",
+            "message": f"gRPC error fetching Loop Out quote: {e.details()}",
+        }
+    except Exception as e:
+        return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+
+def calculate_and_quote_loop_outs(
+    lnd_client: LNDClient, loop_client: LoopClient, channel_ids: list
+) -> dict:
+    """
+    Calculates the precise amount to Loop Out to rebalance a list of channels to 50%
+    outbound liquidity and fetches a quote for each.
+    """
+    channels_response = lnd_client.list_lnd_channels()
+    if channels_response.get("status") != "OK":
+        return channels_response
+
+    all_channels = {
+        ch["chan_id"]: ch
+        for ch in channels_response.get("data", {}).get("channels", [])
+    }
+
+    results = []
+    for channel_id in channel_ids:
+        channel = all_channels.get(str(channel_id))
+
+        if not channel:
+            results.append(
+                {
+                    "channel_id": channel_id,
+                    "status": "ERROR",
+                    "message": "Channel not found.",
+                }
+            )
+            continue
+
+        local_balance = int(channel.get("local_balance", 0))
+        capacity = int(channel.get("capacity", 0))
+
+        if local_balance < 0 or capacity <= 0:
+            results.append(
+                {
+                    "channel_id": channel_id,
+                    "status": "ERROR",
+                    "message": "Invalid local_balance or capacity found for channel.",
+                }
+            )
+            continue
+
+        target_balance = capacity // 2
+        loop_out_amount = int(local_balance - target_balance)
+        loop_out_amount = min(loop_out_amount, 10000000)
+
+        if loop_out_amount <= 0:
+            results.append(
+                {
+                    "channel_id": channel_id,
+                    "status": "OK",
+                    "loop_out_amount_sat": 0,
+                    "quote": None,
+                    "message": "Channel is already balanced or has inbound liquidity.",
+                }
+            )
+        else:
+            quote = _get_loop_out_quote(loop_client, loop_out_amount)
+            results.append(
+                {
+                    "channel_id": channel_id,
+                    "status": "OK",
+                    "loop_out_amount_sat": loop_out_amount,
+                    "quote": quote,
+                }
+            )
+
+    return {"status": "OK", "data": {"channel_quotes": results}}

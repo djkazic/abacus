@@ -12,3 +12,4 @@ This repo is for an autonomous LND agent. It has the capability to look for pote
 - `tools/network_analysis_tools.py` has tools for fetching node rankings.
 - `tools/mempool_space_tools.py` has mempool.space API tools for fee recommendations and channel lookups.
 - `tools/lnd_tools.py` has LND gRPC based tools
+- `tools/loop_tools.py` has Loop gRPC based tools for swaps

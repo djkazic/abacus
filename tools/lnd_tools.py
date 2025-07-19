@@ -100,15 +100,18 @@ class LNDClient:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
     def get_lnd_wallet_balance(self) -> dict:
-        """Shows a summary of the on-chain wallet balance of the LND node using gRPC."""
+        """
+        Shows the on-chain confirmed wallet balance of the LND node using gRPC.
+        """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
 
         try:
             response = self.stub.WalletBalance(ln.WalletBalanceRequest())
+            data = MessageToDict(response, preserving_proto_field_name=True)
             return {
                 "status": "OK",
-                "data": MessageToDict(response, preserving_proto_field_name=True),
+                "data": {"confirmed_balance": data.get("confirmed_balance", 0)},
             }
         except grpc.RpcError as e:
             return {
@@ -378,16 +381,36 @@ class LNDClient:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
     def list_lnd_channels(self) -> dict:
-        """Fetches a list of all open channels from the LND node using gRPC."""
+        """
+        Fetches a filtered list of all open channels from the LND node using gRPC.
+        """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
 
         try:
             response = self.stub.ListChannels(ln.ListChannelsRequest())
-            return {
-                "status": "OK",
-                "data": MessageToDict(response, preserving_proto_field_name=True),
-            }
+            data = MessageToDict(response, preserving_proto_field_name=True)
+
+            filtered_channels = []
+            fields_to_keep = [
+                "active",
+                "remote_pubkey",
+                "channel_point",
+                "chan_id",
+                "capacity",
+                "local_balance",
+                "remote_balance",
+                "csv_delay",
+                "lifetime",
+            ]
+
+            for channel in data.get("channels", []):
+                filtered_channel = {
+                    key: channel.get(key) for key in fields_to_keep if key in channel
+                }
+                filtered_channels.append(filtered_channel)
+
+            return {"status": "OK", "data": {"channels": filtered_channels}}
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",

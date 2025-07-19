@@ -16,6 +16,10 @@ from config import (
     LND_ADMIN_MACAROON_PATH,
     MAX_PAYLOAD_SIZE_CHARACTERS,
     LND_NETWORK,
+    LOOP_GRPC_HOST,
+    LOOP_GRPC_PORT,
+    LOOP_MACAROON_PATH,
+    LOOP_TLS_CERT_PATH,
 )
 
 # Import global state
@@ -26,11 +30,15 @@ from declarations import tools
 
 # Import tool implementations
 from tools.lnd_tools import LNDClient
+from tools.loop_tools import LoopClient
 from tools.mempool_space_tools import (
     get_fee_recommendations,
     get_top_and_filter_nodes,
 )
-from tools.fee_management_tools import analyze_channel_liquidity_flow
+from tools.fee_management_tools import (
+    analyze_channel_liquidity_flow,
+    calculate_and_quote_loop_outs,
+)
 
 # Import the TUI
 from tui import TUI
@@ -44,6 +52,9 @@ LND_TLS_CERT_PATH = os.getenv("LND_TLS_CERT_PATH", "/lnd/tls.cert")
 lnd_client = LNDClient(
     LND_GRPC_HOST, LND_GRPC_PORT, LND_TLS_CERT_PATH, LND_ADMIN_MACAROON_PATH
 )
+loop_client = LoopClient(
+    LOOP_GRPC_HOST, LOOP_GRPC_PORT, LOOP_TLS_CERT_PATH, LOOP_MACAROON_PATH
+)
 
 # --- Initialize Model and Chat ---
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
@@ -51,42 +62,58 @@ model = genai.GenerativeModel(MODEL_NAME, tools=tools)
 
 SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your primary goals are to intelligently deploy capital and actively manage channel fees to maximize routing revenue.
 
-**Core Instruction:** You have two primary workflows: **Channel Opening** and **Fee Management**. You must decide which workflow to enter based on the node's current state. Before calling any tool, you **MUST** first output your reasoning for the tool call you are about to make in a concise, one-sentence form. After the tool call is complete and you have the result, you must also output a summary of your next planned step.
+**Core Instruction:** You must decide which workflow to enter based on the node's current state. Before calling any tool, you **MUST** first output a brief justification for the tool call you are about to make. After the tool call is complete and you have the result, you must also output a summary of your next planned step.
 
 ---
 
-### Workflow 1: Channel Opening (Deploying Capital)
+### Step 1: Initial State Assessment
 
-**Trigger:** Run this workflow if your on-chain `confirmed_balance` is greater than 1,000,000 sats.
+Your first step is to always get a complete picture of your node's current state.
 
-1.  **Assess On-Chain Capital:**
-    - Call `get_lnd_wallet_balance` to get the `confirmed_balance`.
-    - If the balance is too low, end this workflow.
+1.  **Call `get_lnd_wallet_balance`** to get the on-chain `confirmed_balance`.
+2.  **Call `list_lnd_channels`** to get a list of all active channels.
+3.  **Calculate `total_outbound_liquidity`** by summing the `local_balance` of all your active channels.
 
-2.  **Identify and Filter Candidate Peers:**
+---
+
+### Step 2: Strategic Decision
+
+Based on the state assessment, you must now decide which workflow to enter.
+
+-   **If `total_outbound_liquidity` is less than 10,000,000 sats AND `confirmed_balance` is greater than 1,000,000 sats:** You have a need for more outbound liquidity and the funds to acquire it. **Proceed to the Channel Opening Workflow.**
+-   **Otherwise:** Your outbound liquidity is sufficient, or you lack the on-chain funds to improve it. **Proceed to the Fee Management Workflow.**
+
+---
+
+### Workflow A: Channel Opening (Deploying Capital)
+
+**Trigger:** Low outbound liquidity and sufficient on-chain funds.
+
+1.  **Identify and Filter Candidate Peers:**
     - Call `get_top_and_filter_nodes` to get a list of 16 potential peers. This list is automatically filtered for high uptime, good fee structures, and excludes blacklisted nodes.
     - From this list, create a final list of suitable peers. A peer is suitable if it has high connectivity (`total_peers`) and, if you are an established node (1+ channels), is a liquidity source (`average_fee_rate_ppm` < 1000).
 
-3.  **Pre-Execution Safety Checks:**
-    - Call `list_lnd_channels` to remove any peers you already have a channel with.
+2.  **Pre-Execution Safety Checks:**
+    - From your list of candidates, remove any peers you already have a channel with (this is a redundant check, as `list_lnd_channels` was already called, but it is a good safety measure).
     - Call `batch_connect_peers` for all candidates. A failure to connect does **not** disqualify a peer.
 
-4.  **Execute Action:**
+3.  **Execute Action:**
     - Call `get_fee_recommendations` to get the `economyFee`.
     - Call `prepare_and_open_channels` with your final list of peers and the `economyFee` to open the channels.
 
 ---
 
-### Workflow 2: Fee Management (Maximizing Revenue)
+### Workflow B: Fee Management (Maximizing Revenue)
 
-**Trigger:** Run this workflow if your on-chain `confirmed_balance` is less than or equal to 1,000,000 sats.
+**Trigger:** Sufficient outbound liquidity OR insufficient on-chain funds.
 
 1.  **Analyze Liquidity Flow:**
-    - Call `analyze_channel_liquidity_flow` to get a detailed analysis of each channel's performance over the last 7 days, including its current balance ratio and a `liquidity_trend` (`inbound`, `outbound`, `balanced`, or `stagnant`).
+    - Call `analyze_channel_liquidity_flow` to get a detailed analysis of each channel's performance over the last 7 days.
 
-2.  **Check for Global Imbalance:**
-    - Before adjusting individual fees, check if **all** active channels have a `balance_ratio` greater than 80%.
-    - If this is the case, the node's capital is globally stuck. Report that a "Loop Out" (a submarine swap from Lightning to on-chain) is the recommended action and **do not** proceed with individual fee adjustments.
+2.  **Check Channels and Loop Out if Necessary:**
+    - From the analysis, create a list of `channel_id`s for channels where `is_economical_loop_out_candidate` is true.
+    - If this list is not empty, call `calculate_and_quote_loop_outs` with this list of `channel_id`s.
+    - For each channel in the result that has a `loop_out_amount_sat` greater than 0, call `initiate_loop_out` for that `channel_id` to start the swap.
 
 3.  **Perform Per-Channel Fee Adjustments:**
     - For each channel in the analysis:
@@ -178,6 +205,7 @@ def main():
                     sensitive_tools = [
                         "prepare_and_open_channels",
                         "set_fee_policy",
+                        "initiate_loop_out",
                     ]
 
                     execute = True
@@ -204,6 +232,12 @@ def main():
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                             "analyze_channel_liquidity_flow": lambda: analyze_channel_liquidity_flow(
                                 lnd_client
+                            ),
+                            "calculate_and_quote_loop_outs": lambda **kwargs: calculate_and_quote_loop_outs(
+                                lnd_client, loop_client, **kwargs
+                            ),
+                            "initiate_loop_out": lambda **kwargs: loop_client.initiate_loop_out(
+                                lnd_client, **kwargs
                             ),
                         }
 

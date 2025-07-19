@@ -228,6 +228,37 @@ analyze_channel_liquidity_flow_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+calculate_and_quote_loop_outs_declaration = FunctionDeclaration(
+    name="calculate_and_quote_loop_outs",
+    description="Calculates the precise amount to Loop Out to rebalance a list of channels to 50% outbound liquidity and fetches a quote for each.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "channel_ids": {
+                "type": "array",
+                "description": "A list of channel IDs to calculate loop out amounts for.",
+                "items": {"type": "string"},
+            }
+        },
+        "required": ["channel_ids"],
+    },
+)
+
+initiate_loop_out_declaration = FunctionDeclaration(
+    name="initiate_loop_out",
+    description="Initiates a Loop Out swap for a specific channel to rebalance it to 50% outbound liquidity.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "channel_id": {
+                "type": "string",
+                "description": "The ID of the channel to loop out.",
+            },
+        },
+        "required": ["channel_id"],
+    },
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -245,4 +276,6 @@ tools = [
     Tool(function_declarations=[get_fee_recommendations_declaration]),
     Tool(function_declarations=[batch_connect_peers_declaration]),
     Tool(function_declarations=[analyze_channel_liquidity_flow_declaration]),
+    Tool(function_declarations=[calculate_and_quote_loop_outs_declaration]),
+    Tool(function_declarations=[initiate_loop_out_declaration]),
 ]
