@@ -12,7 +12,6 @@ from google.generativeai.types import StopCandidateException
 from config import (
     MODEL_NAME,
     TICK_INTERVAL_SECONDS,
-    MAX_HISTORY_LENGTH,
     LND_ADMIN_MACAROON_PATH,
     MAX_PAYLOAD_SIZE_CHARACTERS,
     LND_NETWORK,
@@ -86,7 +85,7 @@ Your first step is to always get a complete picture of your node's current state
 Based on the state assessment, you must now decide which workflow to enter.
 
 -   **If `total_outbound_liquidity` is less than 10,000,000 sats AND `confirmed_balance` is greater than 1,000,000 sats:** You have a need for more outbound liquidity and the funds to acquire it. **Proceed to the Channel Opening Workflow.**
--   **Otherwise:** Your outbound liquidity is sufficient, or you lack the on-chain funds to improve it. **Proceed to the Fee Management Workflow.**
+-   **Otherwise:** Your outbound liquidity is sufficient, or you lack the on-chain funds to improve it. **Proceed to the Channel Liquidity and Fee Management Workflow.**
 
 ---
 
@@ -123,7 +122,7 @@ Based on the state assessment, you must now decide which workflow to enter.
     fee_management_prompt_section = """
 ---
 
-### Workflow B: Fee Management (Maximizing Revenue)
+### Workflow B: Channel Liquidity and Fee Management (Maximizing Revenue)
 
 **Trigger:** Sufficient outbound liquidity OR insufficient on-chain funds.
 
@@ -131,15 +130,16 @@ Based on the state assessment, you must now decide which workflow to enter.
     - Call `analyze_channel_liquidity_flow` to get a detailed analysis of each channel's performance over the last 7 days.
 
 2.  **Check Channels and Loop Out if Necessary:**
-    - From the analysis, create a list of `channel_id`s for channels where `is_economical_loop_out_candidate` is true.
-    - If this list is not empty, call `calculate_and_quote_loop_outs` with this list of `channel_id`s.
-    - For each channel in the result that has a `loop_out_amount_sat` greater than 0, call `initiate_loop_out` for that `channel_id` to start the swap.
+    - From the analysis, create a list of `channel_id`s for channels where `is_loop_out_candidate` is true.
+    - If this list is not empty, you must first call `calculate_and_quote_loop_outs` with this list of `channel_id`s.
+    - **Then, without stopping,** for each channel in the result that has a `loop_out_amount_sat` greater than 0, you **MUST** immediately call `initiate_loop_out` for that `channel_id` to start the swap. Do not wait for the next tick.
 
 3.  **Perform Per-Channel Fee Adjustments:**
     - For each channel in the analysis:
         - **If `liquidity_trend` is "outbound" and `balance_ratio` is less than 20%:** The channel is depleted. **Raise the fee rate** to discourage further outbound flow. A new `fee_rate_ppm` of 1000 is a good starting point.
         - **If `liquidity_trend` is "inbound" and `balance_ratio` is greater than 80%:** The channel is saturated with local liquidity. **Lower the fee rate** to encourage outbound flow. A new `fee_rate_ppm` of 100 is a good starting point.
-        - **If the channel is "balanced" or "stagnant":** Do not adjust the fees.
+        - **If `liquidity_trend` is "stagnant" and `balance_ratio` is greater than 80%:** The channel has excess local liquidity that is not being used. This is a good candidate for a **Loop Out** to redeploy capital. You should have already handled this in the previous step.
+        - **If the channel is "balanced":** Do not adjust the fees.
     - For each channel that needs an adjustment, call the `set_fee_policy` tool with the `channel_id` and the new `fee_rate_ppm`. You can leave `base_fee_msat` at its current value if you are only adjusting the rate.
 
 """
@@ -175,16 +175,15 @@ def main():
 
     SYSTEM_PROMPT = construct_system_prompt(has_loop_channel)
 
-    chat = model.start_chat(history=[{"role": "user", "parts": [SYSTEM_PROMPT]}])
-
-    current_user_message = (
-        "Assess the node's current state and take action if necessary."
-    )
-
-    request_options = {"retry": Retry()}
-
     while True:
         try:
+            chat = model.start_chat(
+                history=[{"role": "user", "parts": [SYSTEM_PROMPT]}]
+            )
+            current_user_message = (
+                "Assess the node's current state and take action if necessary."
+            )
+            request_options = {"retry": Retry()}
             tui.display_message("system", "--- TICK START ---")
 
             if "Assess the node" in current_user_message:
@@ -267,7 +266,7 @@ def main():
                             "get_fee_recommendations": get_fee_recommendations,
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                             "analyze_channel_liquidity_flow": lambda: analyze_channel_liquidity_flow(
-                                lnd_client
+                                lnd_client, loop_client
                             ),
                             "calculate_and_quote_loop_outs": lambda **kwargs: calculate_and_quote_loop_outs(
                                 lnd_client, loop_client, **kwargs
@@ -278,6 +277,7 @@ def main():
                             "should_open_to_loop": lambda: should_open_to_loop(
                                 lnd_client
                             ),
+                            "list_loop_out_swaps": loop_client.list_loop_out_swaps,
                         }
 
                         if function_name in tool_implementations:

@@ -4,7 +4,6 @@ import os
 # --- Configuration Constants ---
 MODEL_NAME = "gemini-2.5-flash-lite-preview-06-17"
 TICK_INTERVAL_SECONDS = 600  # 10 minutes
-MAX_HISTORY_LENGTH = 20  # Max number of turns to keep in chat history before condensing
 DOCS_DIR = "docs"  # Directory where your documentation files are stored
 MAX_PAYLOAD_SIZE_CHARACTERS = (
     30000  # Max size of the tool response payload to send to the model

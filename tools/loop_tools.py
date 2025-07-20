@@ -2,6 +2,8 @@ import codecs
 import os
 import grpc
 from google.protobuf.json_format import MessageToDict
+from datetime import datetime, timedelta
+
 
 try:
     import client_pb2 as looprpc
@@ -66,6 +68,50 @@ class LoopClient:
             print(f"An unexpected error occurred during Loop gRPC client setup: {e}")
             self.stub = None
 
+    def list_loop_out_swaps(self) -> dict:
+        """
+        Lists the 10 most recent Loop Out swaps from the last 24 hours.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "Loop gRPC client not initialized."}
+
+        try:
+            # Calculate the timestamp for 24 hours ago in nanoseconds
+            twenty_four_hours_ago = datetime.now() - timedelta(hours=24)
+            start_timestamp_ns = int(twenty_four_hours_ago.timestamp() * 1e9)
+
+            request = looprpc.ListSwapsRequest(
+                list_swap_filter=looprpc.ListSwapsFilter(
+                    swap_type=looprpc.ListSwapsFilter.SwapTypeFilter.LOOP_OUT,
+                    start_timestamp_ns=start_timestamp_ns,
+                ),
+            )
+            response = self.stub.ListSwaps(request)
+            response_data = MessageToDict(
+                response,
+                preserving_proto_field_name=True,
+                always_print_fields_with_no_presence=True,
+            )
+
+            # Sort swaps by initiation time (most recent first) and take the top 10
+            if "swaps" in response_data:
+                swaps = response_data["swaps"]
+                # The 'initiation_time' is a string of an int, so we parse it for sorting
+                swaps.sort(
+                    key=lambda s: int(s["initiation_time"]),
+                    reverse=True,
+                )
+                response_data["swaps"] = swaps[:10]
+
+            return {"status": "OK", "data": response_data}
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error listing Loop Out swaps: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
     def initiate_loop_out(self, lnd_client, channel_id: str) -> dict:
         """
         Initiates a Loop Out swap for a specific channel to rebalance it to 50%
@@ -73,6 +119,18 @@ class LoopClient:
         """
         if self.stub is None:
             return {"status": "ERROR", "message": "Loop gRPC client not initialized."}
+
+        # 0. Check for pending Loop Outs for this specific channel
+        pending_swaps_response = self.list_loop_out_swaps()
+        if pending_swaps_response.get("status") == "OK":
+            for swap in pending_swaps_response.get("data", {}).get("swaps", []):
+                if swap.get("state") not in ["SUCCESS", "FAILED"] and str(
+                    channel_id
+                ) in swap.get("outgoing_chan_set", []):
+                    return {
+                        "status": "ERROR",
+                        "message": f"Channel {channel_id} is already part of a pending Loop Out swap.",
+                    }
 
         # 1. Get channel details to calculate amount
         channels_response = lnd_client.list_lnd_channels()
@@ -120,7 +178,11 @@ class LoopClient:
                 max_prepay_routing_fee=max_prepay_routing_fee,
             )
             response = self.stub.LoopOut(request)
-            response_data = MessageToDict(response, preserving_proto_field_name=True)
+            response_data = MessageToDict(
+                response,
+                preserving_proto_field_name=True,
+                always_print_fields_with_no_presence=True,
+            )
             return {"status": "OK", "data": response_data}
         except grpc.RpcError as e:
             return {

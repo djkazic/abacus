@@ -266,6 +266,12 @@ initiate_loop_out_declaration = FunctionDeclaration(
     },
 )
 
+list_loop_out_swaps_declaration = FunctionDeclaration(
+    name="list_loop_out_swaps",
+    description="Lists all Loop Out swaps.",
+    parameters={"type": "object", "properties": {}},
+)
+
 should_open_to_loop_declaration = FunctionDeclaration(
     name="should_open_to_loop",
     description="Checks if the node has enough inbound liquidity to open a channel to the Loop node.",
@@ -292,5 +298,6 @@ tools = [
     Tool(function_declarations=[analyze_channel_liquidity_flow_declaration]),
     Tool(function_declarations=[calculate_and_quote_loop_outs_declaration]),
     Tool(function_declarations=[initiate_loop_out_declaration]),
+    Tool(function_declarations=[list_loop_out_swaps_declaration]),
     Tool(function_declarations=[should_open_to_loop_declaration]),
 ]

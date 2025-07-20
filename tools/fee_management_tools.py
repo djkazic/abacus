@@ -11,30 +11,61 @@ except ImportError:
     looprpc = None
 
 
-def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
+def _is_loop_out_candidate(channel: dict, flow: dict, pending_swaps: list) -> bool:
+    """
+    Determines if a channel is a candidate for a Loop Out based on liquidity
+    balance and pending swap status.
+    """
+    # Condition 1: High outbound liquidity (over 80%)
+    capacity = int(channel.get("capacity", 0))
+    if capacity == 0:
+        return False
+    balance_ratio = int(channel.get("local_balance", 0)) / capacity
+    if balance_ratio <= 0.8:
+        return False
+
+    # Condition 2: No pending swap for this channel
+    chan_id_str = str(channel.get("chan_id"))
+    for swap in pending_swaps:
+        if chan_id_str in swap.get("outgoing_chan_set", []):
+            return False  # This channel is already part of a pending swap
+
+    return True
+
+
+def analyze_channel_liquidity_flow(
+    lnd_client: LNDClient, loop_client: LoopClient
+) -> dict:
     """
     Analyzes the liquidity flow of each channel over the last 7 days and
     provides a summary with the current balance and a liquidity trend.
     """
-    # 1. Get Forwarding History
+    # 1. Get Pending Swaps
+    swaps_response = loop_client.list_loop_out_swaps()
+    if swaps_response.get("status") != "OK":
+        return swaps_response
+    pending_swaps = [
+        s
+        for s in swaps_response.get("data", {}).get("swaps", [])
+        if s.get("state") not in ["SUCCESS", "FAILED"]
+    ]
+
+    # 2. Get Forwarding History
     history_response = lnd_client.forwarding_history(days_to_check=7)
     if history_response.get("status") != "OK":
         return history_response
-
     forwarding_events = history_response.get("data", {}).get("forwarding_events", [])
 
-    # 2. Get Current Channel State
+    # 3. Get Current Channel State
     channels_response = lnd_client.list_lnd_channels()
     if channels_response.get("status") != "OK":
         return channels_response
-
     channels = channels_response.get("data", {}).get("channels", [])
 
-    # 3. Process Data
+    # 4. Process Data
     flow_by_channel = defaultdict(
         lambda: {"inbound_msat": 0, "outbound_msat": 0, "last_forward_time": None}
     )
-
     for event in forwarding_events:
         chan_id_in = event.get("chan_id_in")
         chan_id_out = event.get("chan_id_out")
@@ -50,7 +81,6 @@ def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
                 or event_time > flow_by_channel[chan_id_in]["last_forward_time"]
             ):
                 flow_by_channel[chan_id_in]["last_forward_time"] = event_time
-
         if chan_id_out:
             flow_by_channel[chan_id_out]["outbound_msat"] += amt_out_msat
             if (
@@ -59,10 +89,8 @@ def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
             ):
                 flow_by_channel[chan_id_out]["last_forward_time"] = event_time
 
-    # 4. Generate Analysis
+    # 5. Generate Analysis
     analysis_results = []
-    two_days_ago = datetime.now() - timedelta(days=2)
-
     for channel in channels:
         chan_id = channel.get("chan_id")
         capacity = int(channel.get("capacity", 0))
@@ -78,16 +106,14 @@ def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
         last_forward_time = flow["last_forward_time"]
 
         trend = "stagnant"
-        if inbound_flow > outbound_flow * 1.1:  # 10% tolerance
+        if inbound_flow > outbound_flow * 1.1:
             trend = "inbound"
         elif outbound_flow > inbound_flow * 1.1:
             trend = "outbound"
         elif inbound_flow > 0 or outbound_flow > 0:
             trend = "balanced"
 
-        is_candidate = balance_ratio > 0.8
-        is_economical = last_forward_time is None or last_forward_time < two_days_ago
-        is_economical_candidate = is_candidate and is_economical
+        is_candidate = _is_loop_out_candidate(channel, flow, pending_swaps)
 
         analysis_results.append(
             {
@@ -97,7 +123,6 @@ def analyze_channel_liquidity_flow(lnd_client: LNDClient) -> dict:
                 "capacity": capacity,
                 "balance_ratio": f"{balance_ratio:.2%}",
                 "is_loop_out_candidate": is_candidate,
-                "is_economical_loop_out_candidate": is_economical_candidate,
                 "liquidity_trend": trend,
                 "inbound_msat_7d": inbound_flow,
                 "outbound_msat_7d": outbound_flow,
