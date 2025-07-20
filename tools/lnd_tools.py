@@ -21,6 +21,8 @@ except ImportError:
     state_service = None
     state_service_grpc = None
 
+LOOP_NODE_PUBKEY = "021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d"
+
 
 class LNDClient:
     def __init__(
@@ -121,6 +123,28 @@ class LNDClient:
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
+    def get_lnd_channel_balance(self) -> dict:
+        """
+        Shows the node's current channel balance.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            response = self.stub.ChannelBalance(ln.ChannelBalanceRequest())
+            data = MessageToDict(response, preserving_proto_field_name=True)
+            return {
+                "status": "OK",
+                "data": data,
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error fetching wallet balance: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
     def set_fee_policy(
         self, channel_id: str, base_fee_msat: int, fee_rate_ppm: int
     ) -> dict:
@@ -149,12 +173,17 @@ class LNDClient:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
 
         try:
-            request = ln.OpenChannelRequest(
-                node_pubkey=bytes.fromhex(node_pubkey),
-                local_funding_amount=int(local_funding_amount_sat),
-                push_sat=0,
-                sat_per_vbyte=int(sat_per_vbyte),
-            )
+            request_args = {
+                "node_pubkey": bytes.fromhex(node_pubkey),
+                "local_funding_amount": int(local_funding_amount_sat),
+                "push_sat": 0,
+                "sat_per_vbyte": int(sat_per_vbyte),
+            }
+            if node_pubkey == LOOP_NODE_PUBKEY:
+                request_args["use_fee_rate"] = True
+                request_args["fee_rate"] = 4500
+
+            request = ln.OpenChannelRequest(**request_args)
             response = self.stub.OpenChannelSync(request)
             return {
                 "status": "OK",
@@ -181,13 +210,17 @@ class LNDClient:
 
         batch_channels = []
         for ch in channels:
-            batch_channels.append(
-                ln.BatchOpenChannel(
-                    node_pubkey=bytes.fromhex(ch["node_pubkey"]),
-                    local_funding_amount=int(ch["local_funding_amount_sat"]),
-                    push_sat=0,
-                )
-            )
+            node_pubkey = ch["node_pubkey"]
+            batch_channel_args = {
+                "node_pubkey": bytes.fromhex(node_pubkey),
+                "local_funding_amount": int(ch["local_funding_amount_sat"]),
+                "push_sat": 0,
+            }
+            if node_pubkey == LOOP_NODE_PUBKEY:
+                batch_channel_args["use_fee_rate"] = True
+                batch_channel_args["fee_rate"] = 4500
+
+            batch_channels.append(ln.BatchOpenChannel(**batch_channel_args))
 
         try:
             request = ln.BatchOpenChannelRequest(

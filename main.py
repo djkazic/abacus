@@ -39,6 +39,7 @@ from tools.fee_management_tools import (
     analyze_channel_liquidity_flow,
     calculate_and_quote_loop_outs,
 )
+from tools.decision_tools import should_open_to_loop
 
 # Import the TUI
 from tui import TUI
@@ -60,7 +61,11 @@ loop_client = LoopClient(
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 model = genai.GenerativeModel(MODEL_NAME, tools=tools)
 
-SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your primary goals are to intelligently deploy capital and actively manage channel fees to maximize routing revenue.
+
+def construct_system_prompt(has_loop_channel: bool) -> str:
+    """Constructs the system prompt based on whether a channel with the Loop node exists."""
+
+    base_prompt = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your primary goals are to intelligently deploy capital and actively manage channel fees to maximize routing revenue.
 
 **Core Instruction:** You must decide which workflow to enter based on the node's current state. Before calling any tool, you **MUST** first output a brief justification for the tool call you are about to make. After the tool call is complete and you have the result, you must also output a summary of your next planned step.
 
@@ -71,8 +76,8 @@ SYSTEM_PROMPT = f"""You are an autonomous Lightning Network agent operating on t
 Your first step is to always get a complete picture of your node's current state.
 
 1.  **Call `get_lnd_wallet_balance`** to get the on-chain `confirmed_balance`.
-2.  **Call `list_lnd_channels`** to get a list of all active channels.
-3.  **Calculate `total_outbound_liquidity`** by summing the `local_balance` of all your active channels.
+2.  **Call `get_lnd_channel_balance`** to get the `local_balance`, which is your `total_outbound_liquidity`.
+3.  **Call `list_lnd_channels`** to get a list of all active channels for later use in safety checks.
 
 ---
 
@@ -85,22 +90,37 @@ Based on the state assessment, you must now decide which workflow to enter.
 
 ---
 
-### Workflow A: Channel Opening (Deploying Capital)
+"""
 
-**Trigger:** Low outbound liquidity and sufficient on-chain funds.
+    workflow_a_prompt = """### Workflow A: Channel Opening (Deploying Capital)
 
-1.  **Identify and Filter Candidate Peers:**
+**Trigger:** Low outbound liquidity and sufficient on-chain funds. This workflow includes a high-priority check for opening a channel to the high-profit Loop node.
+"""
+
+    step_number = 1
+    if not has_loop_channel:
+        workflow_a_prompt += f"""
+{step_number}.  **Prioritize High-Profit Loop Node:** Your first priority is to check if you can open a channel to the Loop node, as this is a high-profit opportunity.
+    - Call `should_open_to_loop`. If the result indicates that it is a good idea, proceed directly to step {step_number + 2} and open a channel with the Loop node's pubkey.
+"""
+        step_number += 1
+
+    workflow_a_prompt += f"""
+{step_number}.  **Identify and Filter Candidate Peers{' (if Loop is not an option):' if not has_loop_channel else ''}**
     - Call `get_top_and_filter_nodes` to get a list of 16 potential peers. This list is automatically filtered for high uptime, good fee structures, and excludes blacklisted nodes.
     - From this list, create a final list of suitable peers. A peer is suitable if it has high connectivity (`total_peers`) and, if you are an established node (1+ channels), is a liquidity source (`average_fee_rate_ppm` < 1000).
-
-2.  **Pre-Execution Safety Checks:**
-    - From your list of candidates, remove any peers you already have a channel with (this is a redundant check, as `list_lnd_channels` was already called, but it is a good safety measure).
+    - From your list of candidates, remove any peers you already have a channel with.
     - Call `batch_connect_peers` for all candidates. A failure to connect does **not** disqualify a peer.
+"""
+    step_number += 1
 
-3.  **Execute Action:**
+    workflow_a_prompt += f"""
+{step_number}.  **Execute Action:**
     - Call `get_fee_recommendations` to get the `economyFee`.
-    - Call `prepare_and_open_channels` with your final list of peers and the `economyFee` to open the channels.
+    - Call `prepare_and_open_channels` with your final list of peers (or the Loop node) and the `economyFee` to open the channels.
+"""
 
+    fee_management_prompt_section = """
 ---
 
 ### Workflow B: Fee Management (Maximizing Revenue)
@@ -123,6 +143,7 @@ Based on the state assessment, you must now decide which workflow to enter.
     - For each channel that needs an adjustment, call the `set_fee_policy` tool with the `channel_id` and the new `fee_rate_ppm`. You can leave `base_fee_msat` at its current value if you are only adjusting the rate.
 
 """
+    return base_prompt + workflow_a_prompt + fee_management_prompt_section
 
 
 def _convert_args_to_dict(args):
@@ -139,6 +160,20 @@ def main():
     global total_tokens_used
     tui = TUI()
     tui.display_welcome()
+
+    # --- System Prompt Construction ---
+    loop_node_pubkey = (
+        "021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d"
+    )
+    channels_response = lnd_client.list_lnd_channels()
+    has_loop_channel = False
+    if channels_response and channels_response.get("status") == "OK":
+        for channel in channels_response.get("data", {}).get("channels", []):
+            if channel.get("remote_pubkey") == loop_node_pubkey:
+                has_loop_channel = True
+                break
+
+    SYSTEM_PROMPT = construct_system_prompt(has_loop_channel)
 
     chat = model.start_chat(history=[{"role": "user", "parts": [SYSTEM_PROMPT]}])
 
@@ -221,6 +256,7 @@ def main():
                         tool_implementations = {
                             "get_lnd_info": lnd_client.get_lnd_info,
                             "get_lnd_wallet_balance": lnd_client.get_lnd_wallet_balance,
+                            "get_lnd_channel_balance": lnd_client.get_lnd_channel_balance,
                             "get_lnd_state": lnd_client.get_lnd_state,
                             "set_fee_policy": lnd_client.set_fee_policy,
                             "prepare_and_open_channels": lnd_client.prepare_and_open_channels,
@@ -238,6 +274,9 @@ def main():
                             ),
                             "initiate_loop_out": lambda **kwargs: loop_client.initiate_loop_out(
                                 lnd_client, **kwargs
+                            ),
+                            "should_open_to_loop": lambda: should_open_to_loop(
+                                lnd_client
                             ),
                         }
 

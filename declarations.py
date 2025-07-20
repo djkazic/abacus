@@ -1,4 +1,5 @@
 from google.generativeai.types import FunctionDeclaration, Tool
+from tools.decision_tools import should_open_to_loop
 
 # --- Tool Declarations ---
 get_lnd_info_declaration = FunctionDeclaration(
@@ -10,6 +11,12 @@ get_lnd_info_declaration = FunctionDeclaration(
 get_lnd_wallet_balance_declaration = FunctionDeclaration(
     name="get_lnd_wallet_balance",
     description="Shows the on-chain wallet balance of the LND node, including confirmed and unconfirmed balances.",
+    parameters={"type": "object", "properties": {}},
+)
+
+get_lnd_channel_balance_declaration = FunctionDeclaration(
+    name="get_lnd_channel_balance",
+    description="Shows the node's current channel balance.",
     parameters={"type": "object", "properties": {}},
 )
 
@@ -259,9 +266,16 @@ initiate_loop_out_declaration = FunctionDeclaration(
     },
 )
 
+should_open_to_loop_declaration = FunctionDeclaration(
+    name="should_open_to_loop",
+    description="Checks if the node has enough inbound liquidity to open a channel to the Loop node.",
+    parameters={"type": "object", "properties": {}},
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
+    Tool(function_declarations=[get_lnd_channel_balance_declaration]),
     Tool(function_declarations=[set_fee_policy_declaration]),
     Tool(function_declarations=[prepare_and_open_channels_declaration]),
     Tool(function_declarations=[list_lnd_peers_declaration]),
@@ -278,4 +292,5 @@ tools = [
     Tool(function_declarations=[analyze_channel_liquidity_flow_declaration]),
     Tool(function_declarations=[calculate_and_quote_loop_outs_declaration]),
     Tool(function_declarations=[initiate_loop_out_declaration]),
+    Tool(function_declarations=[should_open_to_loop_declaration]),
 ]
