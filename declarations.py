@@ -43,9 +43,9 @@ set_fee_policy_declaration = FunctionDeclaration(
     },
 )
 
-prepare_and_open_channels_declaration = FunctionDeclaration(
-    name="prepare_and_open_channels",
-    description="Calculates channel sizes, performs safety checks, and opens channels with a list of peers.",
+propose_channel_opens_declaration = FunctionDeclaration(
+    name="propose_channel_opens",
+    description="Calculates channel sizes, performs safety checks, and proposes channel openings with a list of peers.",
     parameters={
         "type": "object",
         "properties": {
@@ -66,6 +66,40 @@ prepare_and_open_channels_declaration = FunctionDeclaration(
             },
         },
         "required": ["peers", "sat_per_vbyte"],
+    },
+)
+
+execute_channel_opens_declaration = FunctionDeclaration(
+    name="execute_channel_opens",
+    description="Executes a list of proposed channel opening operations.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "operations": {
+                "type": "array",
+                "description": "A list of channel opening operations to execute.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string", "enum": ["single", "batch"]},
+                        "node_pubkey": {"type": "string"},
+                        "local_funding_amount_sat": {"type": "integer"},
+                        "sat_per_vbyte": {"type": "integer"},
+                        "channels": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "node_pubkey": {"type": "string"},
+                                    "local_funding_amount_sat": {"type": "integer"},
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        },
+        "required": ["operations"],
     },
 )
 
@@ -158,7 +192,7 @@ connect_peer_declaration = FunctionDeclaration(
             },
             "host_port": {
                 "type": "string",
-                "description": "The host:port of the peer (e.g., '3.33.236.230:9735').",
+                "description": "The host:port of the peer.",
             },
         },
         "required": ["node_pubkey", "host_port"],
@@ -199,6 +233,22 @@ get_fee_recommendations_declaration = FunctionDeclaration(
     description="Fetches recommended fee rates from mempool.space's API.",
     parameters={"type": "object", "properties": {}},
 )
+
+get_node_uri_declaration = FunctionDeclaration(
+    name="get_node_uri",
+    description="Fetches the connection URI for a given Lightning Network node.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "pubkey": {
+                "type": "string",
+                "description": "The public key of the node to look up.",
+            },
+        },
+        "required": ["pubkey"],
+    },
+)
+
 
 batch_connect_peers_declaration = FunctionDeclaration(
     name="batch_connect_peers",
@@ -283,7 +333,8 @@ tools = [
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
     Tool(function_declarations=[get_lnd_channel_balance_declaration]),
     Tool(function_declarations=[set_fee_policy_declaration]),
-    Tool(function_declarations=[prepare_and_open_channels_declaration]),
+    Tool(function_declarations=[propose_channel_opens_declaration]),
+    Tool(function_declarations=[execute_channel_opens_declaration]),
     Tool(function_declarations=[list_lnd_peers_declaration]),
     Tool(function_declarations=[list_lnd_channels_declaration]),
     Tool(function_declarations=[search_documents_declaration]),
@@ -294,6 +345,7 @@ tools = [
     Tool(function_declarations=[connect_peer_declaration]),
     Tool(function_declarations=[get_lnd_state_declaration]),
     Tool(function_declarations=[get_fee_recommendations_declaration]),
+    Tool(function_declarations=[get_node_uri_declaration]),
     Tool(function_declarations=[batch_connect_peers_declaration]),
     Tool(function_declarations=[analyze_channel_liquidity_flow_declaration]),
     Tool(function_declarations=[calculate_and_quote_loop_outs_declaration]),

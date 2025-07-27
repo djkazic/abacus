@@ -20,6 +20,7 @@ LND_ADMIN_MACAROON_PATH = os.getenv(
 # Nodes that can trigger edge cases for deploying liquidity
 NODE_BLACKLIST = [
     "0364913d18a19c671bb36dd04d6ad5be0fe8f2894314c36a9db3f03c2d414907e1",  # 20M minimum chan size
+    "035e4ff418fc8b5554c5d9eea66396c227bd429a3251c8cbc711002ba215bfc226",  # High fees
 ]
 
 # --- Loop Configuration ---

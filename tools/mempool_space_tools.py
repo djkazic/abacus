@@ -3,6 +3,32 @@ from config import LND_NETWORK, NODE_BLACKLIST
 import concurrent.futures
 
 
+def get_node_uri(pubkey: str) -> dict:
+    """
+    Fetches the connection URI for a given Lightning Network node.
+    """
+    base_url = "https://mempool.space"
+    if LND_NETWORK == "testnet":
+        base_url += "/testnet"
+
+    url = f"{base_url}/api/v1/lightning/nodes/{pubkey}"
+    try:
+        response = requests.get(url)
+        response.raise_for_status()
+        node_data = response.json()
+        return {
+            "status": "OK",
+            "data": {
+                "pubkey": node_data.get("public_key"),
+                "uri": f"{node_data.get('sockets')}",
+            },
+        }
+    except requests.exceptions.RequestException as e:
+        return {"status": "ERROR", "message": f"Failed to fetch data from {url}: {e}"}
+    except Exception as e:
+        return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+
 def get_fee_recommendations():
     """
     Fetches recommended fee rates from mempool.space's API.

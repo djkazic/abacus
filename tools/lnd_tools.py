@@ -240,15 +240,30 @@ class LNDClient:
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
-    def prepare_and_open_channels(self, peers: list, sat_per_vbyte: int) -> dict:
+    def propose_channel_opens(self, peers: list, sat_per_vbyte: int) -> dict:
         """
-        Calculates channel sizes, performs safety checks, and opens channels.
+        Calculates channel sizes, performs safety checks, and proposes channel openings.
         This tool is a higher-level abstraction that simplifies the channel opening process.
         """
         if not peers:
             return {
                 "status": "ERROR",
                 "message": "No peers provided to open channels with.",
+            }
+
+        # Special handling for a single LOOP node peer
+        if len(peers) == 1 and peers[0].get("pub_key") == LOOP_NODE_PUBKEY:
+            print("A dedicated 30M sat channel to the LOOP node is proposed.")
+            return {
+                "status": "PROPOSED",
+                "operations": [
+                    {
+                        "type": "single",
+                        "node_pubkey": LOOP_NODE_PUBKEY,
+                        "local_funding_amount_sat": 30000000,
+                        "sat_per_vbyte": sat_per_vbyte,
+                    }
+                ],
             }
 
         # 1. Financial Safety Check
@@ -288,7 +303,7 @@ class LNDClient:
 
         final_peers = peers[:num_peers]
 
-        # 3. Execute channel opening
+        # 3. Propose channel opening
         if not final_peers:
             return {
                 "status": "OK",
@@ -296,7 +311,7 @@ class LNDClient:
             }
 
         if len(final_peers) > 1:
-            # Batch open
+            # Propose batch open
             channels_to_open = [
                 {
                     "node_pubkey": peer["pub_key"],
@@ -304,17 +319,83 @@ class LNDClient:
                 }
                 for peer in final_peers
             ]
-            return self._internal_batch_open_channel(
-                channels=channels_to_open, sat_per_vbyte=sat_per_vbyte
-            )
+            return {
+                "status": "PROPOSED",
+                "operations": [
+                    {
+                        "type": "batch",
+                        "channels": channels_to_open,
+                        "sat_per_vbyte": sat_per_vbyte,
+                    }
+                ],
+            }
         else:
-            # Single open
+            # Propose single open
             peer = final_peers[0]
-            return self._internal_open_channel(
-                node_pubkey=peer["pub_key"],
-                local_funding_amount_sat=per_channel_amount,
-                sat_per_vbyte=sat_per_vbyte,
-            )
+            return {
+                "status": "PROPOSED",
+                "operations": [
+                    {
+                        "type": "single",
+                        "node_pubkey": peer["pub_key"],
+                        "local_funding_amount_sat": per_channel_amount,
+                        "sat_per_vbyte": sat_per_vbyte,
+                    }
+                ],
+            }
+
+    def execute_channel_opens(self, operations: list) -> dict:
+        """
+        Executes a list of proposed channel opening operations.
+        """
+        if not operations:
+            return {"status": "ERROR", "message": "No operations provided to execute."}
+
+        # Validate LOOP node channel amounts
+        for op in operations:
+            op_type = op.get("type")
+            if op_type == "single":
+                if (
+                    op.get("node_pubkey") == LOOP_NODE_PUBKEY
+                    and op.get("local_funding_amount_sat") != 30000000
+                ):
+                    return {
+                        "status": "ERROR",
+                        "message": "LOOP node channel open must be exactly 30M satoshis.",
+                    }
+            elif op_type == "batch":
+                for channel in op.get("channels", []):
+                    if (
+                        channel.get("node_pubkey") == LOOP_NODE_PUBKEY
+                        and channel.get("local_funding_amount_sat") != 30000000
+                    ):
+                        return {
+                            "status": "ERROR",
+                            "message": "LOOP node channel open must be exactly 30M satoshis.",
+                        }
+
+        results = []
+        for op in operations:
+            op_type = op.get("type")
+            if op_type == "single":
+                result = self._internal_open_channel(
+                    node_pubkey=op["node_pubkey"],
+                    local_funding_amount_sat=op["local_funding_amount_sat"],
+                    sat_per_vbyte=op["sat_per_vbyte"],
+                )
+                results.append(result)
+            elif op_type == "batch":
+                result = self._internal_batch_open_channel(
+                    channels=op["channels"],
+                    sat_per_vbyte=op["sat_per_vbyte"],
+                )
+                results.append(result)
+            else:
+                results.append(
+                    {"status": "ERROR", "message": f"Unknown operation type: {op_type}"}
+                )
+
+        return {"status": "OK", "results": results}
 
     def list_lnd_peers(self) -> dict:
         """

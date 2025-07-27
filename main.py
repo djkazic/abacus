@@ -31,6 +31,7 @@ from declarations import tools
 from tools.lnd_tools import LNDClient
 from tools.loop_tools import LoopClient
 from tools.mempool_space_tools import (
+    get_node_uri,
     get_fee_recommendations,
     get_top_and_filter_nodes,
 )
@@ -64,15 +65,32 @@ model = genai.GenerativeModel(MODEL_NAME, tools=tools)
 def construct_system_prompt(has_loop_channel: bool) -> str:
     """Constructs the system prompt based on whether a channel with the Loop node exists."""
 
+    priority_check_prompt = ""
+    if not has_loop_channel:
+        priority_check_prompt += f"""---
+
+### Step 0: Priority Check: High-Profit Loop Node
+
+1.  **Prioritize High-Profit Loop Node:** Your first step is to check if you can open a channel to the Loop node, as this is a high-profit opportunity.
+    - Call `should_open_to_loop`. If the result indicates that it is a good idea:
+        - Use `get_fee_recommendations` to get a proper fee rate for opening the channel.
+        - Use `get_node_uri` to resolve the LOOP node's connection URI.
+        - Use `connect_peer` to connect to the LOOP node using that connection URI.
+        - Open a channel with the Loop node's pubkey using `propose_channel_opens` and `execute_channel_opens`.
+
+    Note: do NOT proceed to other workflows yet. This stage takes priority.
+
+---"""
+
     base_prompt = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your primary goals are to intelligently deploy capital and actively manage channel fees to maximize routing revenue.
 
 **Core Instruction:** You must decide which workflow to enter based on the node's current state. Before calling any tool, you **MUST** first output a brief justification for the tool call you are about to make. After the tool call is complete and you have the result, you must also output a summary of your next planned step.
 
----
+{priority_check_prompt}
 
 ### Step 1: Initial State Assessment
 
-Your first step is to always get a complete picture of your node's current state.
+Always get a complete picture of your node's current state.
 
 1.  **Call `get_lnd_wallet_balance`** to get the on-chain `confirmed_balance`.
 2.  **Call `get_lnd_channel_balance`** to get the `local_balance`, which is your `total_outbound_liquidity`.
@@ -93,30 +111,26 @@ Based on the state assessment, you must now decide which workflow to enter.
 
     workflow_a_prompt = """### Workflow A: Channel Opening (Deploying Capital)
 
-**Trigger:** Low outbound liquidity and sufficient on-chain funds. This workflow includes a high-priority check for opening a channel to the high-profit Loop node.
+**Trigger:** Low outbound liquidity and sufficient on-chain funds.
 """
 
-    step_number = 1
+    peer_identification_title = "**Identify and Filter Candidate Peers**"
     if not has_loop_channel:
-        workflow_a_prompt += f"""
-{step_number}.  **Prioritize High-Profit Loop Node:** Your first priority is to check if you can open a channel to the Loop node, as this is a high-profit opportunity.
-    - Call `should_open_to_loop`. If the result indicates that it is a good idea, proceed directly to step {step_number + 2} and open a channel with the Loop node's pubkey.
-"""
-        step_number += 1
+        peer_identification_title += " (if Loop is not an option)"
 
     workflow_a_prompt += f"""
-{step_number}.  **Identify and Filter Candidate Peers{' (if Loop is not an option):' if not has_loop_channel else ''}**
+1.  {peer_identification_title}:
     - Call `get_top_and_filter_nodes` to get a list of 16 potential peers. This list is automatically filtered for high uptime, good fee structures, and excludes blacklisted nodes.
     - From this list, create a final list of suitable peers. A peer is suitable if it has high connectivity (`total_peers`) and, if you are an established node (1+ channels), is a liquidity source (`average_fee_rate_ppm` < 1000).
     - From your list of candidates, remove any peers you already have a channel with.
     - Call `batch_connect_peers` for all candidates. A failure to connect does **not** disqualify a peer.
 """
-    step_number += 1
 
     workflow_a_prompt += f"""
-{step_number}.  **Execute Action:**
+2.  **Execute Action:**
     - Call `get_fee_recommendations` to get the `economyFee`.
-    - Call `prepare_and_open_channels` with your final list of peers (or the Loop node) and the `economyFee` to open the channels.
+    - Call `propose_channel_opens` with your final list of peers (or the Loop node) and the `economyFee` to get a list of proposed channel openings.
+    - Call `execute_channel_opens` with the list of proposed operations.
 """
 
     fee_management_prompt_section = """
@@ -237,7 +251,7 @@ def main():
 
                     tool_output = {}
                     sensitive_tools = [
-                        "prepare_and_open_channels",
+                        "execute_channel_opens",
                         "set_fee_policy",
                         "initiate_loop_out",
                     ]
@@ -258,12 +272,14 @@ def main():
                             "get_lnd_channel_balance": lnd_client.get_lnd_channel_balance,
                             "get_lnd_state": lnd_client.get_lnd_state,
                             "set_fee_policy": lnd_client.set_fee_policy,
-                            "prepare_and_open_channels": lnd_client.prepare_and_open_channels,
+                            "propose_channel_opens": lnd_client.propose_channel_opens,
+                            "execute_channel_opens": lnd_client.execute_channel_opens,
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
                             "batch_connect_peers": lnd_client.batch_connect_peers,
                             "get_top_and_filter_nodes": get_top_and_filter_nodes,
                             "get_fee_recommendations": get_fee_recommendations,
+                            "get_node_uri": get_node_uri,
                             "list_lnd_channels": lnd_client.list_lnd_channels,
                             "analyze_channel_liquidity_flow": lambda: analyze_channel_liquidity_flow(
                                 lnd_client, loop_client
