@@ -1,4 +1,4 @@
-from tools.lnd_tools import LNDClient
+from tools.lnd_tools import LNDClient, LOOP_NODE_PUBKEY
 from tools.loop_tools import LoopClient
 from collections import defaultdict
 import grpc
@@ -92,6 +92,8 @@ def analyze_channel_liquidity_flow(
     # 5. Generate Analysis
     analysis_results = []
     for channel in channels:
+        if channel.get("remote_pubkey") == LOOP_NODE_PUBKEY:
+            continue
         chan_id = channel.get("chan_id")
         capacity = int(channel.get("capacity", 0))
         local_balance = int(channel.get("local_balance", 0))

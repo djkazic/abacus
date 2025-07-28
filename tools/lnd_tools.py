@@ -165,6 +165,7 @@ class LNDClient:
         node_pubkey: str,
         local_funding_amount_sat: int,
         sat_per_vbyte: int = 0,
+        fee_rate: int = 1200,
     ) -> dict:
         """
         Opens a new channel with a peer using gRPC. Intended for internal use.
@@ -179,9 +180,9 @@ class LNDClient:
                 "push_sat": 0,
                 "sat_per_vbyte": int(sat_per_vbyte),
             }
-            if node_pubkey == LOOP_NODE_PUBKEY:
+            if fee_rate:
                 request_args["use_fee_rate"] = True
-                request_args["fee_rate"] = 4500
+                request_args["fee_rate"] = fee_rate
 
             request = ln.OpenChannelRequest(**request_args)
             response = self.stub.OpenChannelSync(request)
@@ -216,9 +217,9 @@ class LNDClient:
                 "local_funding_amount": int(ch["local_funding_amount_sat"]),
                 "push_sat": 0,
             }
-            if node_pubkey == LOOP_NODE_PUBKEY:
+            if "fee_rate" in ch:
                 batch_channel_args["use_fee_rate"] = True
-                batch_channel_args["fee_rate"] = 4500
+                batch_channel_args["fee_rate"] = ch["fee_rate"]
 
             batch_channels.append(ln.BatchOpenChannel(**batch_channel_args))
 
@@ -378,15 +379,24 @@ class LNDClient:
         for op in operations:
             op_type = op.get("type")
             if op_type == "single":
+                fee_rate = 1200
+                if op["node_pubkey"] == LOOP_NODE_PUBKEY:
+                    fee_rate = 4500
                 result = self._internal_open_channel(
                     node_pubkey=op["node_pubkey"],
                     local_funding_amount_sat=op["local_funding_amount_sat"],
                     sat_per_vbyte=op["sat_per_vbyte"],
+                    fee_rate=fee_rate,
                 )
                 results.append(result)
             elif op_type == "batch":
+                channels = op["channels"]
+                for channel in channels:
+                    if channel["node_pubkey"] == LOOP_NODE_PUBKEY:
+                        channel["fee_rate"] = 4500
+
                 result = self._internal_batch_open_channel(
-                    channels=op["channels"],
+                    channels=channels,
                     sat_per_vbyte=op["sat_per_vbyte"],
                 )
                 results.append(result)
