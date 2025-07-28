@@ -94,7 +94,6 @@ Always get a complete picture of your node's current state.
 
 1.  **Call `get_lnd_wallet_balance`** to get the on-chain `confirmed_balance`.
 2.  **Call `get_lnd_channel_balance`** to get the `local_balance`, which is your `total_outbound_liquidity`.
-3.  **Call `list_lnd_channels`** to get a list of all active channels for later use in safety checks.
 
 ---
 
