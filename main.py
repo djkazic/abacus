@@ -38,6 +38,7 @@ from tools.mempool_space_tools import (
 from tools.fee_management_tools import (
     analyze_channel_liquidity_flow,
     calculate_and_quote_loop_outs,
+    propose_fee_adjustments,
 )
 from tools.decision_tools import should_open_to_loop
 
@@ -141,6 +142,7 @@ Based on the state assessment, you must now decide which workflow to enter.
 
 1.  **Analyze Liquidity Flow:**
     - Call `analyze_channel_liquidity_flow` to get a detailed analysis of each channel's performance over the last 7 days.
+    - Call `propose_fee_adjustments` to get proposed fee rates.
 
 2.  **Check Channels and Loop Out if Necessary:**
     - From the analysis, create a list of `channel_id`s for channels where `is_loop_out_candidate` is true.
@@ -148,11 +150,6 @@ Based on the state assessment, you must now decide which workflow to enter.
     - **Then, without stopping,** for each channel in the result that has a `loop_out_amount_sat` greater than 0, you **MUST** immediately call `initiate_loop_out` for that `channel_id` to start the swap. Do not wait for the next tick.
 
 3.  **Perform Per-Channel Fee Adjustments:**
-    - For each channel in the analysis:
-        - **If `liquidity_trend` is "outbound" and `balance_ratio` is less than 20%:** The channel is depleted. **Raise the fee rate** to discourage further outbound flow. A new `fee_rate_ppm` of 1000 is a good starting point.
-        - **If `liquidity_trend` is "inbound" and `balance_ratio` is greater than 80%:** The channel is saturated with local liquidity. **Lower the fee rate** to encourage outbound flow. A new `fee_rate_ppm` of 100 is a good starting point.
-        - **If `liquidity_trend` is "stagnant" and `balance_ratio` is greater than 80%:** The channel has excess local liquidity that is not being used. This is a good candidate for a **Loop Out** to redeploy capital. You should have already handled this in the previous step.
-        - **If the channel is "balanced":** Do not adjust the fees.
     - For each channel that needs an adjustment, call the `set_fee_policy` tool with the `channel_id` and the new `fee_rate_ppm`. You can leave `base_fee_msat` at its current value if you are only adjusting the rate.
 
 """
@@ -251,7 +248,6 @@ def main():
                     tool_output = {}
                     sensitive_tools = [
                         "execute_channel_opens",
-                        "set_fee_policy",
                         "initiate_loop_out",
                     ]
 
@@ -293,6 +289,9 @@ def main():
                                 lnd_client
                             ),
                             "list_loop_out_swaps": loop_client.list_loop_out_swaps,
+                            "propose_fee_adjustments": lambda: propose_fee_adjustments(
+                                lnd_client
+                            ),
                         }
 
                         if function_name in tool_implementations:

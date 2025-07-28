@@ -30,16 +30,12 @@ set_fee_policy_declaration = FunctionDeclaration(
                 "type": "string",
                 "description": "The ID of the channel to update.",
             },
-            "base_fee_msat": {
-                "type": "integer",
-                "description": "The base fee in millisatoshis.",
-            },
-            "fee_rate_ppm": {
+            "fee_rate": {
                 "type": "integer",
                 "description": "The fee rate in parts per million.",
             },
         },
-        "required": ["channel_id", "base_fee_msat", "fee_rate_ppm"],
+        "required": ["channel_id", "fee_rate"],
     },
 )
 
@@ -328,6 +324,12 @@ should_open_to_loop_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+propose_fee_adjustments_declaration = FunctionDeclaration(
+    name="propose_fee_adjustments",
+    description="Analyzes all open channels and proposes fee adjustments based on their recent forwarding activity.",
+    parameters={"type": "object", "properties": {}},
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -352,4 +354,5 @@ tools = [
     Tool(function_declarations=[initiate_loop_out_declaration]),
     Tool(function_declarations=[list_loop_out_swaps_declaration]),
     Tool(function_declarations=[should_open_to_loop_declaration]),
+    Tool(function_declarations=[propose_fee_adjustments_declaration]),
 ]

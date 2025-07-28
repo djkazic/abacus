@@ -145,20 +145,56 @@ class LNDClient:
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
-    def set_fee_policy(
-        self, channel_id: str, base_fee_msat: int, fee_rate_ppm: int
-    ) -> dict:
+    def set_fee_policy(self, channel_id: str, fee_rate: int) -> dict:
         """
-        Dummy function to simulate setting a fee policy for a given channel.
-        In a real scenario, this would interact with the LND node to update fees.
+        Sets the fee policy for a given channel.
         """
-        print(
-            f"Dummy: Setting fee policy for channel {channel_id}: base_fee_msat={base_fee_msat}, fee_rate_ppm={fee_rate_ppm}"
-        )
-        return {
-            "status": "OK",
-            "message": f"Fee policy for channel {channel_id} set (dummy).",
-        }
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            # Find the channel point for the given channel_id
+            list_channels_response = self.list_lnd_channels()
+            if list_channels_response.get("status") != "OK":
+                return list_channels_response
+
+            channel_point_str = None
+            # The channel id from lnd is a string, so we'll cast the input to a string for comparison.
+            str_channel_id = str(channel_id)
+            for channel in list_channels_response.get("data", {}).get("channels", []):
+                if channel.get("chan_id") == str_channel_id:
+                    channel_point_str = channel.get("channel_point")
+                    break
+
+            if not channel_point_str:
+                return {
+                    "status": "ERROR",
+                    "message": f"Channel with ID {channel_id} not found.",
+                }
+
+            funding_txid, output_index = channel_point_str.split(":")
+            channel_point = ln.ChannelPoint(
+                funding_txid_str=funding_txid,
+                output_index=int(output_index),
+            )
+
+            request = ln.PolicyUpdateRequest(
+                chan_point=channel_point,
+                fee_rate_ppm=int(fee_rate),
+                time_lock_delta=144,
+            )
+            response = self.stub.UpdateChannelPolicy(request)
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error setting fee policy: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
 
     def _internal_open_channel(
         self,
@@ -381,7 +417,7 @@ class LNDClient:
             if op_type == "single":
                 fee_rate = 1200
                 if op["node_pubkey"] == LOOP_NODE_PUBKEY:
-                    fee_rate = 4500
+                    fee_rate = 4400
                 result = self._internal_open_channel(
                     node_pubkey=op["node_pubkey"],
                     local_funding_amount_sat=op["local_funding_amount_sat"],
@@ -393,7 +429,7 @@ class LNDClient:
                 channels = op["channels"]
                 for channel in channels:
                     if channel["node_pubkey"] == LOOP_NODE_PUBKEY:
-                        channel["fee_rate"] = 4500
+                        channel["fee_rate"] = 4400
 
                 result = self._internal_batch_open_channel(
                     channels=channels,
@@ -589,3 +625,44 @@ class LNDClient:
                 "status": "ERROR",
                 "message": f"An unexpected error occurred: {e}",
             }
+
+    def get_channel_fee_policy(self, channel_id: str) -> dict:
+        """
+        Retrieves the fee policy for a specific channel.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            # First, get our node's pubkey to identify our policy in the response.
+            info_response = self.get_lnd_info()
+            if info_response.get("status") != "OK":
+                return info_response
+            my_pubkey = info_response.get("data", {}).get("identity_pubkey")
+
+            # Get the channel info.
+            request = ln.ChanInfoRequest(chan_id=int(channel_id))
+            response = self.stub.GetChanInfo(request)
+            data = MessageToDict(response, preserving_proto_field_name=True)
+
+            # Determine which node's policy is ours.
+            policy = None
+            if data.get("node1_pub") == my_pubkey:
+                policy = data.get("node1_policy")
+            elif data.get("node2_pub") == my_pubkey:
+                policy = data.get("node2_policy")
+
+            if not policy:
+                return {
+                    "status": "ERROR",
+                    "message": f"Could not find our node's policy for channel {channel_id}.",
+                }
+
+            return {"status": "OK", "data": policy}
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error getting channel info: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}

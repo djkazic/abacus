@@ -278,7 +278,7 @@ def calculate_dynamic_fee(lnd_client: LNDClient, pubkey: str) -> dict:
         elif total_flow_sats > 10_000_000:
             fee_ppm = 4800
         else:
-            fee_ppm = 4500  # Default for low/no activity
+            fee_ppm = 4400  # Default for low/no activity
         final_fee_ppm = max(fee_ppm, 4000)
     else:
         # Scaled fees for regular nodes, with an 850 ppm floor.
@@ -297,3 +297,54 @@ def calculate_dynamic_fee(lnd_client: LNDClient, pubkey: str) -> dict:
         final_fee_ppm = max(fee_ppm, 850)
 
     return {"status": "OK", "data": {"fee_ppm": final_fee_ppm}}
+
+
+def propose_fee_adjustments(lnd_client: LNDClient) -> dict:
+    """
+    Analyzes all open channels and proposes fee adjustments based on their
+    recent forwarding activity.
+    """
+    # 1. Get all open channels
+    channels_response = lnd_client.list_lnd_channels()
+    if channels_response.get("status") != "OK":
+        return channels_response
+    channels = channels_response.get("data", {}).get("channels", [])
+
+    proposed_operations = []
+    for channel in channels:
+        channel_id = channel.get("chan_id")
+        remote_pubkey = channel.get("remote_pubkey")
+
+        # 2. Get the current fee policy for the channel
+        policy_response = lnd_client.get_channel_fee_policy(channel_id)
+        if policy_response.get("status") != "OK":
+            print(
+                f"Warning: Could not get fee policy for channel {channel_id}. Skipping."
+            )
+            continue
+        current_policy = policy_response.get("data", {})
+        current_fee_ppm = int(current_policy.get("fee_rate_milli_msat", 0))
+
+        # 3. Calculate the recommended fee based on activity
+        recommended_fee_response = calculate_dynamic_fee(lnd_client, remote_pubkey)
+        if recommended_fee_response.get("status") != "OK":
+            print(
+                f"Warning: Could not calculate dynamic fee for peer {remote_pubkey}. Skipping."
+            )
+            continue
+        recommended_fee_ppm = recommended_fee_response.get("data", {}).get("fee_ppm")
+
+        # 4. Compare and propose adjustment if necessary
+        if current_fee_ppm != recommended_fee_ppm:
+            proposed_operations.append(
+                {
+                    "type": "set_fee_policy",
+                    "channel_id": channel_id,
+                    "fee_rate_ppm": recommended_fee_ppm,
+                }
+            )
+
+    if not proposed_operations:
+        return {"status": "OK", "message": "All channel fees are optimal."}
+
+    return {"status": "PROPOSED", "operations": proposed_operations}
