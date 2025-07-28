@@ -233,3 +233,67 @@ def calculate_and_quote_loop_outs(
             )
 
     return {"status": "OK", "data": {"channel_quotes": results}}
+
+
+def calculate_dynamic_fee(lnd_client: LNDClient, pubkey: str) -> dict:
+    """
+    Calculates a scaled fee rate for a potential new channel based on the
+    historical forwarding activity of existing channels with the same peer.
+    The fee is tiered based on total flow over the last 7 days.
+    """
+    # Get all channels to find existing ones with the specified pubkey.
+    channels_response = lnd_client.list_lnd_channels()
+    if channels_response.get("status") != "OK":
+        return channels_response
+
+    peer_channels = [
+        ch
+        for ch in channels_response.get("data", {}).get("channels", [])
+        if ch.get("remote_pubkey") == pubkey
+    ]
+
+    total_flow_sats = 0
+    if peer_channels:
+        peer_channel_ids = {ch.get("chan_id") for ch in peer_channels}
+        history_response = lnd_client.forwarding_history(days_to_check=7)
+        if history_response.get("status") != "OK":
+            return history_response
+
+        forwarding_events = history_response.get("data", {}).get(
+            "forwarding_events", []
+        )
+        total_flow_msat = sum(
+            int(event.get("amt_in_msat", 0)) + int(event.get("amt_out_msat", 0))
+            for event in forwarding_events
+            if event.get("chan_id_in") in peer_channel_ids
+            or event.get("chan_id_out") in peer_channel_ids
+        )
+        total_flow_sats = total_flow_msat / 1000
+
+    # --- Fee Calculation Logic ---
+    if pubkey == LOOP_NODE_PUBKEY:
+        # Scaled fees for the LOOP node, with a 4000 ppm floor.
+        if total_flow_sats > 50_000_000:
+            fee_ppm = 5000
+        elif total_flow_sats > 10_000_000:
+            fee_ppm = 4800
+        else:
+            fee_ppm = 4500  # Default for low/no activity
+        final_fee_ppm = max(fee_ppm, 4000)
+    else:
+        # Scaled fees for regular nodes, with an 850 ppm floor.
+        if not peer_channels:
+            fee_ppm = 1200  # Default for a new peer with no history
+        elif total_flow_sats > 10_000_000:
+            fee_ppm = 1500
+        elif total_flow_sats > 5_000_000:
+            fee_ppm = 1300
+        elif total_flow_sats > 1_000_000:
+            fee_ppm = 1200
+        elif total_flow_sats > 500_000:
+            fee_ppm = 1100
+        else:
+            fee_ppm = 900  # For very low activity
+        final_fee_ppm = max(fee_ppm, 850)
+
+    return {"status": "OK", "data": {"fee_ppm": final_fee_ppm}}
