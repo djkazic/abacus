@@ -24,6 +24,7 @@ NODE_BLACKLIST = [
 ]
 
 # --- Loop Configuration ---
+LOOP_NODE_PUBKEY = "021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d"
 LOOP_GRPC_HOST = os.getenv("LOOP_GRPC_HOST", "localhost")
 LOOP_GRPC_PORT = int(os.getenv("LOOP_GRPC_PORT", 11010))
 LOOP_MACAROON_PATH = os.getenv(

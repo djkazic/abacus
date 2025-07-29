@@ -1,9 +1,6 @@
 import grpc
-from typing import List, Optional
-
 from tools.lnd_tools import LNDClient
-
-LOOP_NODE_PUBKEY = "021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d"
+from config import LOOP_NODE_PUBKEY
 
 
 def should_open_to_loop(lnd_client: LNDClient) -> dict:

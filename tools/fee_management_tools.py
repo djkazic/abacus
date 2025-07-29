@@ -278,7 +278,7 @@ def calculate_dynamic_fee(lnd_client: LNDClient, pubkey: str) -> dict:
         elif total_flow_sats > 10_000_000:
             fee_ppm = 4800
         else:
-            fee_ppm = 4400  # Default for low/no activity
+            fee_ppm = 4300  # Default for low/no activity
         final_fee_ppm = max(fee_ppm, 4000)
     else:
         # Scaled fees for regular nodes, with an 850 ppm floor.

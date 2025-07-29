@@ -15,6 +15,7 @@ from config import (
     LND_ADMIN_MACAROON_PATH,
     MAX_PAYLOAD_SIZE_CHARACTERS,
     LND_NETWORK,
+    LOOP_NODE_PUBKEY,
     LOOP_GRPC_HOST,
     LOOP_GRPC_PORT,
     LOOP_MACAROON_PATH,
@@ -74,7 +75,7 @@ def construct_system_prompt(has_loop_channel: bool) -> str:
 
 1.  **Prioritize High-Profit Loop Node:** Your first step is to check if you can open a channel to the Loop node, as this is a high-profit opportunity.
     - Call `should_open_to_loop`. If the result indicates that it is a good idea:
-        - Use `get_fee_recommendations` to get a proper fee rate for opening the channel.
+        - Use `get_fee_recommendations` to get the `economyFee`.
         - Use `get_node_uri` to resolve the LOOP node's connection URI.
         - Use `connect_peer` to connect to the LOOP node using that connection URI.
         - Open a channel with the Loop node's pubkey using `propose_channel_opens` and `execute_channel_opens`.
@@ -172,14 +173,11 @@ def main():
     tui.display_welcome()
 
     # --- System Prompt Construction ---
-    loop_node_pubkey = (
-        "021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d"
-    )
     channels_response = lnd_client.list_lnd_channels()
     has_loop_channel = False
     if channels_response and channels_response.get("status") == "OK":
         for channel in channels_response.get("data", {}).get("channels", []):
-            if channel.get("remote_pubkey") == loop_node_pubkey:
+            if channel.get("remote_pubkey") == LOOP_NODE_PUBKEY:
                 has_loop_channel = True
                 break
 

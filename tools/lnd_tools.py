@@ -3,6 +3,7 @@ import os
 import time
 
 import grpc
+from config import LOOP_NODE_PUBKEY
 from google.protobuf.json_format import MessageToDict
 
 
@@ -20,8 +21,6 @@ except ImportError:
     lnrpc = None
     state_service = None
     state_service_grpc = None
-
-LOOP_NODE_PUBKEY = "021c97a90a411ff2b10dc2a8e32de2f29d2fa49d41bfbb52bd416e460db0747d0d"
 
 
 class LNDClient:
@@ -417,7 +416,7 @@ class LNDClient:
             if op_type == "single":
                 fee_rate = 1200
                 if op["node_pubkey"] == LOOP_NODE_PUBKEY:
-                    fee_rate = 4400
+                    fee_rate = 4300
                 result = self._internal_open_channel(
                     node_pubkey=op["node_pubkey"],
                     local_funding_amount_sat=op["local_funding_amount_sat"],
@@ -429,7 +428,7 @@ class LNDClient:
                 channels = op["channels"]
                 for channel in channels:
                     if channel["node_pubkey"] == LOOP_NODE_PUBKEY:
-                        channel["fee_rate"] = 4400
+                        channel["fee_rate"] = 4300
 
                 result = self._internal_batch_open_channel(
                     channels=channels,
