@@ -1,5 +1,4 @@
 from google.generativeai.types import FunctionDeclaration, Tool
-from tools.decision_tools import should_open_to_loop
 
 # --- Tool Declarations ---
 get_lnd_info_declaration = FunctionDeclaration(
