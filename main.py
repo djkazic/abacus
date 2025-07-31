@@ -42,6 +42,8 @@ from tools.fee_management_tools import (
     propose_fee_adjustments,
 )
 from tools.decision_tools import should_open_to_loop
+from tools.rebalance_tools import execute_rebalance
+from tools.rebalance_opportunities import find_rebalance_opportunities
 
 # Import the TUI
 from tui import TUI
@@ -141,17 +143,23 @@ Based on the state assessment, you must now decide which workflow to enter.
 
 **Trigger:** Sufficient outbound liquidity OR insufficient on-chain funds.
 
-1.  **Analyze Liquidity Flow:**
+1.  **Analyze Liquidity and Fees:**
     - Call `analyze_channel_liquidity_flow` to get a detailed analysis of each channel's performance over the last 7 days.
     - Call `propose_fee_adjustments` to get proposed fee rates.
 
-2.  **Check Channels and Loop Out if Necessary:**
-    - From the analysis, create a list of `channel_id`s for channels where `is_loop_out_candidate` is true.
-    - If this list is not empty, you must first call `calculate_and_quote_loop_outs` with this list of `channel_id`s.
-    - **Then, without stopping,** for each channel in the result that has a `loop_out_amount_sat` greater than 0, you **MUST** immediately call `initiate_loop_out` for that `channel_id` to start the swap. Do not wait for the next tick.
+2.  **Priority: Try Circular Rebalancing:**
+    - Call `find_rebalance_opportunities` to get a list of potential rebalancing opportunities.
+    - If there are opportunities, you **MUST** call `execute_rebalance` for a suitable pair, with a rebalance amount of 10000 sats.
+    - After the rebalance, **conclude this workflow for the current tick.**
 
-3.  **Perform Per-Channel Fee Adjustments:**
-    - For each channel that needs an adjustment, call the `set_fee_policy` tool with the `channel_id` and the new `fee_rate_ppm`. You can leave `base_fee_msat` at its current value if you are only adjusting the rate.
+3.  **Loop Out as a Fallback:**
+    - **ONLY IF** a rebalance was not possible in the previous step (e.g., no suitable destination channels were found or the rebalance proposal failed), you should then consider a Loop Out.
+    - Now, use the `is_loop_out_candidate` flag. Take your list of channels where this flag is true and call `calculate_and_quote_loop_outs`.
+    - For each channel in the result that has a `loop_out_amount_sat` greater than 0, you **MUST** immediately call `initiate_loop_out` for that `channel_id`.
+
+4.  **Perform Per-Channel Fee Adjustments:**
+    - After rebalancing or looping out, proceed with fee adjustments.
+    - For each channel that needs an adjustment, call the `set_fee_policy` tool with the `channel_id` and the new `fee_rate_ppm`.
 
 """
     return base_prompt + workflow_a_prompt + fee_management_prompt_section
@@ -247,6 +255,7 @@ def main():
                     sensitive_tools = [
                         "execute_channel_opens",
                         "initiate_loop_out",
+                        "execute_rebalance",
                     ]
 
                     execute = True
@@ -288,6 +297,12 @@ def main():
                             ),
                             "list_loop_out_swaps": loop_client.list_loop_out_swaps,
                             "propose_fee_adjustments": lambda: propose_fee_adjustments(
+                                lnd_client
+                            ),
+                            "execute_rebalance": lambda **kwargs: execute_rebalance(
+                                lnd_client, **kwargs
+                            ),
+                            "find_rebalance_opportunities": lambda: find_rebalance_opportunities(
                                 lnd_client
                             ),
                         }

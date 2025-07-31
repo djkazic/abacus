@@ -329,6 +329,35 @@ propose_fee_adjustments_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+execute_rebalance_declaration = FunctionDeclaration(
+    name="execute_rebalance",
+    description="Executes a circular rebalance to move funds from an outbound channel to an inbound channel.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "outgoing_channel_id": {
+                "type": "string",
+                "description": "The ID of the channel to send funds from.",
+            },
+            "incoming_channel_id": {
+                "type": "string",
+                "description": "The ID of the channel to send funds to.",
+            },
+            "amount_sats": {
+                "type": "integer",
+                "description": "The amount in satoshis to rebalance.",
+            },
+        },
+        "required": ["outgoing_channel_id", "incoming_channel_id", "amount_sats"],
+    },
+)
+
+find_rebalance_opportunities_declaration = FunctionDeclaration(
+    name="find_rebalance_opportunities",
+    description="Finds opportunities for rebalancing channels.",
+    parameters={"type": "object", "properties": {}},
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -354,4 +383,6 @@ tools = [
     Tool(function_declarations=[list_loop_out_swaps_declaration]),
     Tool(function_declarations=[should_open_to_loop_declaration]),
     Tool(function_declarations=[propose_fee_adjustments_declaration]),
+    Tool(function_declarations=[execute_rebalance_declaration]),
+    Tool(function_declarations=[find_rebalance_opportunities_declaration]),
 ]

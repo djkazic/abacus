@@ -1,6 +1,7 @@
 import codecs
 import os
 import time
+import base64
 
 import grpc
 from config import LOOP_NODE_PUBKEY
@@ -10,6 +11,8 @@ from google.protobuf.json_format import MessageToDict
 try:
     import lightning_pb2 as ln
     import lightning_pb2_grpc as lnrpc
+    import router_pb2 as router
+    import router_pb2_grpc as routerrpc
     import stateservice_pb2 as state_service
     import stateservice_pb2_grpc as state_service_grpc
 except ImportError:
@@ -19,6 +22,8 @@ except ImportError:
     )
     ln = None
     lnrpc = None
+    router = None
+    routerrpc = None
     state_service = None
     state_service_grpc = None
 
@@ -37,12 +42,13 @@ class LNDClient:
         self.admin_macaroon_path = admin_macaroon_path
         self.stub = None
         self.state_stub = None
+        self.router_stub = None
         self._macaroon_bytes_hex = None
         self._setup_grpc_client()
 
     def _setup_grpc_client(self):
         """Sets up the gRPC client for LND."""
-        if None in [ln, lnrpc, state_service, state_service_grpc]:
+        if None in [ln, lnrpc, state_service, state_service_grpc, router, routerrpc]:
             print("Error: LND gRPC dependencies not met. Cannot set up gRPC client.")
             return
 
@@ -69,6 +75,7 @@ class LNDClient:
             )
             self.stub = lnrpc.LightningStub(channel)
             self.state_stub = state_service_grpc.StateStub(channel)
+            self.router_stub = routerrpc.RouterStub(channel)
 
             print(
                 f"LND gRPC client initialized for {self.lnd_grpc_host}:{self.lnd_grpc_port}"
@@ -665,3 +672,143 @@ class LNDClient:
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def _add_invoice(self, value_msat: int, memo: str = "") -> dict:
+        """
+        Adds a new invoice to the LND node.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            request = ln.Invoice(memo=memo, value_msat=value_msat)
+            response = self.stub.AddInvoice(request)
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error adding invoice: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def _lookup_invoice(self, payment_hash: str) -> dict:
+        """
+        Looks up an invoice by its payment hash.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            request = ln.PaymentHash(r_hash_str=payment_hash)
+            response = self.stub.LookupInvoice(request)
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error looking up invoice: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def get_channel_info(self, channel_id: str) -> dict:
+        """
+        Retrieves information for a specific channel.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            request = ln.ChanInfoRequest(chan_id=int(channel_id))
+            response = self.stub.GetChanInfo(request)
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error getting channel info: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def _query_routes(
+        self,
+        pub_key: str,
+        outgoing_chan_id: str,
+        last_hop_pubkey: str,
+        amt_msat: int,
+        fee_limit_msat: int,
+    ) -> dict:
+        """
+        Queries for a route.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            request = ln.QueryRoutesRequest(
+                pub_key=pub_key,
+                outgoing_chan_id=int(outgoing_chan_id),
+                last_hop_pubkey=bytes.fromhex(last_hop_pubkey),
+                amt_msat=amt_msat,
+                fee_limit=ln.FeeLimit(fixed_msat=fee_limit_msat),
+                use_mission_control=True,
+            )
+            response = self.stub.QueryRoutes(request)
+            # Return the raw protobuf response to avoid data conversion issues.
+            return {"status": "OK", "data": response}
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error querying routes: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def _send_to_route_v2(
+        self, route, payment_hash: str, payment_addr: str, total_amt_msat: int
+    ) -> dict:
+        """
+        Takes a route object, and sends the payment.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            # Add the MPP record to the final hop.
+            if route.hops:
+                # The payment_addr needs to be bytes.
+                # The AddInvoice response gives a base64 string, so we decode it.
+                payment_addr_bytes = base64.b64decode(payment_addr)
+                route.hops[-1].mpp_record.payment_addr = payment_addr_bytes
+                route.hops[-1].mpp_record.total_amt_msat = total_amt_msat
+
+            request = router.SendToRouteRequest(
+                route=route,
+                payment_hash=base64.b64decode(payment_hash),
+            )
+
+            response = self.router_stub.SendToRouteV2(request)
+            return {
+                "status": "OK",
+                "data": MessageToDict(response, preserving_proto_field_name=True),
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error sending to route: {e.details()}",
+            }
+        except Exception as e:
+            # Provide more detail in the error message
+            return {
+                "status": "ERROR",
+                "message": f"An unexpected error occurred in _send_to_route_v2: {e}",
+            }
