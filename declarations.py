@@ -319,7 +319,7 @@ list_loop_out_swaps_declaration = FunctionDeclaration(
 
 should_open_to_loop_declaration = FunctionDeclaration(
     name="should_open_to_loop",
-    description="Checks if the node has enough inbound liquidity to open a channel to the Loop node.",
+    description="Checks if the node has enough inbound liquidity to open a new channel to the Loop node.",
     parameters={"type": "object", "properties": {}},
 )
 
