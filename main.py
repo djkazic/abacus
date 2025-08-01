@@ -86,7 +86,9 @@ def construct_system_prompt(has_loop_channel: bool) -> str:
 
 ---"""
 
-    base_prompt = f"""You are an autonomous Lightning Network agent operating on the **{LND_NETWORK}** network. Your primary goals are to intelligently deploy capital and actively manage channel fees to maximize routing revenue.
+    base_prompt = f"""You are abacus, self-optimizing autonomous Lightning Network agent. Network: **{LND_NETWORK}**
+
+Your primary goals are to intelligently deploy capital and actively manage channel fees to maximize routing revenue.
 
 **Core Instruction:** You must decide which workflow to enter based on the node's current state. Before calling any tool, you **MUST** first output a brief justification for the tool call you are about to make. After the tool call is complete and you have the result, you must also output a summary of your next planned step.
 
