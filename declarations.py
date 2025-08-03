@@ -358,6 +358,12 @@ find_rebalance_opportunities_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+propose_channel_closes_declaration = FunctionDeclaration(
+    name="propose_channel_closes",
+    description="Identifies and proposes closing channels with low outbound liquidity usage.",
+    parameters={"type": "object", "properties": {}},
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -385,4 +391,5 @@ tools = [
     Tool(function_declarations=[propose_fee_adjustments_declaration]),
     Tool(function_declarations=[execute_rebalance_declaration]),
     Tool(function_declarations=[find_rebalance_opportunities_declaration]),
+    Tool(function_declarations=[propose_channel_closes_declaration]),
 ]

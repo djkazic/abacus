@@ -186,6 +186,7 @@ class LNDClient:
 
             request = ln.PolicyUpdateRequest(
                 chan_point=channel_point,
+                base_fee_msat=1000,
                 fee_rate_ppm=int(fee_rate),
                 time_lock_delta=144,
             )
@@ -735,6 +736,29 @@ class LNDClient:
             return {
                 "status": "ERROR",
                 "message": f"gRPC error getting channel info: {e.details()}",
+            }
+        except Exception as e:
+            return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}
+
+    def get_node_alias(self, pub_key: str) -> dict:
+        """
+        Retrieves the alias for a given node pubkey.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        try:
+            request = ln.NodeInfoRequest(pub_key=pub_key, include_channels=False)
+            response = self.stub.GetNodeInfo(request)
+            data = MessageToDict(response, preserving_proto_field_name=True)
+            return {
+                "status": "OK",
+                "data": {"alias": data.get("node", {}).get("alias")},
+            }
+        except grpc.RpcError as e:
+            return {
+                "status": "ERROR",
+                "message": f"gRPC error getting node info: {e.details()}",
             }
         except Exception as e:
             return {"status": "ERROR", "message": f"An unexpected error occurred: {e}"}

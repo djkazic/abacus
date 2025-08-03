@@ -41,7 +41,7 @@ from tools.fee_management_tools import (
     calculate_and_quote_loop_outs,
     propose_fee_adjustments,
 )
-from tools.decision_tools import should_open_to_loop
+from tools.decision_tools import should_open_to_loop, propose_channel_closes
 from tools.rebalance_tools import execute_rebalance
 from tools.rebalance_opportunities import find_rebalance_opportunities
 
@@ -163,6 +163,9 @@ Based on the state assessment, you must now decide which workflow to enter.
     - After rebalancing or looping out, proceed with fee adjustments.
     - For each channel that needs an adjustment, call the `set_fee_policy` tool with the `channel_id` and the new `fee_rate_ppm`.
 
+5.  **Check for Idle Channels:**
+    - Call `propose_channel_closes` to identify channels that are not being used effectively.
+    - Report these channels to the user for manual review.
 """
     return base_prompt + workflow_a_prompt + fee_management_prompt_section
 
@@ -175,6 +178,45 @@ def _convert_args_to_dict(args):
         return [_convert_args_to_dict(item) for item in args]
     else:
         return args
+
+
+def sanitize_arguments(tool_declaration, args):
+    """
+    Recursively sanitizes arguments based on the tool's schema.
+    Casts floats to integers where the schema expects an integer.
+    """
+    if (
+        not tool_declaration
+        or not hasattr(tool_declaration, "parameters")
+        or not tool_declaration.parameters
+    ):
+        return args
+
+    sanitized_args = {}
+    schema_properties = tool_declaration.parameters.properties
+
+    for key, value in args.items():
+        if key not in schema_properties:
+            sanitized_args[key] = value
+            continue
+
+        schema = schema_properties[key]
+        schema_type = schema.type
+
+        if schema_type == "integer" and isinstance(value, float):
+            sanitized_args[key] = int(value)
+        elif schema_type == "array" and isinstance(value, list):
+            items_schema = schema.items
+            if items_schema and items_schema.type == "integer":
+                sanitized_args[key] = [
+                    int(v) if isinstance(v, float) else v for v in value
+                ]
+            else:
+                sanitized_args[key] = value
+        else:
+            sanitized_args[key] = value
+
+    return sanitized_args
 
 
 def main():
@@ -192,6 +234,12 @@ def main():
                 break
 
     SYSTEM_PROMPT = construct_system_prompt(has_loop_channel)
+
+    # Create a mapping from function name to its declaration
+    tool_declarations = {}
+    for tool in tools:
+        for func_decl in tool.function_declarations:
+            tool_declarations[func_decl.name] = func_decl
 
     while True:
         try:
@@ -251,6 +299,11 @@ def main():
                     function_name = function_call.name
                     function_args = _convert_args_to_dict(function_call.args)
 
+                    # Sanitize arguments before calling the tool
+                    if function_name in tool_declarations:
+                        tool_decl = tool_declarations[function_name]
+                        function_args = sanitize_arguments(tool_decl, function_args)
+
                     tui.display_tool_call(function_name, function_args)
 
                     tool_output = {}
@@ -305,6 +358,9 @@ def main():
                                 lnd_client, **kwargs
                             ),
                             "find_rebalance_opportunities": lambda: find_rebalance_opportunities(
+                                lnd_client
+                            ),
+                            "propose_channel_closes": lambda: propose_channel_closes(
                                 lnd_client
                             ),
                         }
