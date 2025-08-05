@@ -836,3 +836,44 @@ class LNDClient:
                 "status": "ERROR",
                 "message": f"An unexpected error occurred in _send_to_route_v2: {e}",
             }
+
+    def execute_channel_closes(self, channel_points: list) -> dict:
+        """
+        Closes a list of channels.
+        """
+        if self.stub is None:
+            return {"status": "ERROR", "message": "LND gRPC client not initialized."}
+
+        results = []
+        for cp_str in channel_points:
+            try:
+                funding_txid, output_index = cp_str.split(":")
+                channel_point = ln.ChannelPoint(
+                    funding_txid_str=funding_txid,
+                    output_index=int(output_index),
+                )
+                request = ln.CloseChannelRequest(channel_point=channel_point)
+                response = self.stub.CloseChannel(request)
+                results.append(
+                    {
+                        "status": "OK",
+                        "data": MessageToDict(
+                            response, preserving_proto_field_name=True
+                        ),
+                    }
+                )
+            except grpc.RpcError as e:
+                results.append(
+                    {
+                        "status": "ERROR",
+                        "message": f"gRPC error closing channel {cp_str}: {e.details()}",
+                    }
+                )
+            except Exception as e:
+                results.append(
+                    {
+                        "status": "ERROR",
+                        "message": f"An unexpected error occurred for channel {cp_str}: {e}",
+                    }
+                )
+        return {"status": "OK", "results": results}

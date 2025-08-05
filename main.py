@@ -165,7 +165,7 @@ Based on the state assessment, you must now decide which workflow to enter.
 
 5.  **Check for Idle Channels:**
     - Call `propose_channel_closes` to identify channels that are not being used effectively.
-    - Report these channels to the user for manual review.
+    - If there are proposals, call `execute_channel_closes` with the list of channel points from the proposals.
 """
     return base_prompt + workflow_a_prompt + fee_management_prompt_section
 
@@ -311,6 +311,7 @@ def main():
                         "execute_channel_opens",
                         "initiate_loop_out",
                         "execute_rebalance",
+                        "execute_channel_closes",
                     ]
 
                     execute = True
@@ -331,6 +332,7 @@ def main():
                             "set_fee_policy": lnd_client.set_fee_policy,
                             "propose_channel_opens": lnd_client.propose_channel_opens,
                             "execute_channel_opens": lnd_client.execute_channel_opens,
+                            "execute_channel_closes": lnd_client.execute_channel_closes,
                             "list_lnd_peers": lnd_client.list_lnd_peers,
                             "connect_peer": lnd_client.connect_peer,
                             "batch_connect_peers": lnd_client.batch_connect_peers,

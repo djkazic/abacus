@@ -123,6 +123,7 @@ def propose_channel_closes(lnd_client: LNDClient) -> dict:
                 {
                     "alias": alias,
                     "chan_id": channel.get("chan_id"),
+                    "channel_point": channel.get("channel_point"),
                     "capacity_sats": channel.get("capacity"),
                     "routed_volume_msat": channel.get("routed_volume_msat"),
                     "age_days": int(int(channel.get("lifetime", 0)) / (24 * 60 * 60)),

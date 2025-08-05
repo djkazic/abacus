@@ -364,6 +364,22 @@ propose_channel_closes_declaration = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+execute_channel_closes_declaration = FunctionDeclaration(
+    name="execute_channel_closes",
+    description="Closes a list of channels.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "channel_points": {
+                "type": "array",
+                "description": "A list of channel points to close.",
+                "items": {"type": "string"},
+            }
+        },
+        "required": ["channel_points"],
+    },
+)
+
 tools = [
     Tool(function_declarations=[get_lnd_info_declaration]),
     Tool(function_declarations=[get_lnd_wallet_balance_declaration]),
@@ -392,4 +408,5 @@ tools = [
     Tool(function_declarations=[execute_rebalance_declaration]),
     Tool(function_declarations=[find_rebalance_opportunities_declaration]),
     Tool(function_declarations=[propose_channel_closes_declaration]),
+    Tool(function_declarations=[execute_channel_closes_declaration]),
 ]
