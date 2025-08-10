@@ -20,8 +20,8 @@ def execute_rebalance(
     Executes a circular rebalance.
     """
     amount_sats = int(amount_sats)
-    if amount_sats > 20000:
-        amount_sats = 20000
+    if amount_sats > 250000:
+        amount_sats = 250000
 
     info_response = lnd_client.get_lnd_info()
     if info_response.get("status") != "OK":

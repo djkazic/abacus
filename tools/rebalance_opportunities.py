@@ -33,9 +33,9 @@ def find_rebalance_opportunities(lnd_client: LNDClient) -> dict:
                 (local_balance / capacity) * 100 if capacity > 0 else 0
             )
 
-            if outbound_percentage < 20:  # Low outbound liquidity threshold
+            if outbound_percentage <= 25:  # Low outbound liquidity threshold
                 low_outbound.append(channel)
-            elif outbound_percentage > 80:  # High outbound liquidity threshold
+            elif outbound_percentage >= 75:  # High outbound liquidity threshold
                 if channel.get("remote_pubkey") != LOOP_NODE_PUBKEY:
                     high_outbound.append(channel)
 

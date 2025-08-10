@@ -151,7 +151,7 @@ Based on the state assessment, you must now decide which workflow to enter.
 
 2.  **Priority: Try Circular Rebalancing:**
     - Call `find_rebalance_opportunities` to get a list of potential rebalancing opportunities.
-    - If there are opportunities, you **MUST** call `execute_rebalance` for a suitable pair, with a rebalance amount of 20000 sats.
+    - If there are opportunities, you **MUST** call `execute_rebalance` for a suitable pair, with a rebalance amount of 250000 sats.
     - After the rebalance, **conclude this workflow for the current tick.**
 
 3.  **Loop Out as a Fallback:**
