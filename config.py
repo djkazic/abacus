@@ -2,7 +2,7 @@ import os
 
 
 # --- Configuration Constants ---
-MODEL_NAME = "gemini-2.5-flash-lite-preview-06-17"
+MODEL_NAME = "gemini-2.5-flash-lite"
 TICK_INTERVAL_SECONDS = 600  # 10 minutes
 DOCS_DIR = "docs"  # Directory where your documentation files are stored
 MAX_PAYLOAD_SIZE_CHARACTERS = (

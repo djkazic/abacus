@@ -802,6 +802,7 @@ class LNDClient:
     ) -> dict:
         """
         Takes a route object, and sends the payment.
+        This function now handles the single response object from SendToRouteV2.
         """
         if self.stub is None:
             return {"status": "ERROR", "message": "LND gRPC client not initialized."}
@@ -809,8 +810,6 @@ class LNDClient:
         try:
             # Add the MPP record to the final hop.
             if route.hops:
-                # The payment_addr needs to be bytes.
-                # The AddInvoice response gives a base64 string, so we decode it.
                 payment_addr_bytes = base64.b64decode(payment_addr)
                 route.hops[-1].mpp_record.payment_addr = payment_addr_bytes
                 route.hops[-1].mpp_record.total_amt_msat = total_amt_msat
@@ -820,18 +819,30 @@ class LNDClient:
                 payment_hash=base64.b64decode(payment_hash),
             )
 
+            # The SendToRouteV2 call returns a single HTLCAttempt object.
             response = self.router_stub.SendToRouteV2(request)
-            return {
-                "status": "OK",
-                "data": MessageToDict(response, preserving_proto_field_name=True),
-            }
+            response_dict = MessageToDict(response, preserving_proto_field_name=True)
+            status = response_dict.get("status")
+
+            if status == "SUCCEEDED":
+                return {"status": "OK", "data": response_dict}
+            elif status == "FAILED":
+                return {
+                    "status": "ERROR",
+                    "message": f"Rebalance failed: {response_dict.get('failure', {}).get('code')}",
+                    "data": response_dict,
+                }
+            else:
+                # If the status is neither SUCCEEDED nor FAILED, return the full response
+                # with an OK status to allow the agent to inspect the data.
+                return {"status": "OK", "data": response_dict}
+
         except grpc.RpcError as e:
             return {
                 "status": "ERROR",
                 "message": f"gRPC error sending to route: {e.details()}",
             }
         except Exception as e:
-            # Provide more detail in the error message
             return {
                 "status": "ERROR",
                 "message": f"An unexpected error occurred in _send_to_route_v2: {e}",

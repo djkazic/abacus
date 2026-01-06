@@ -1,4 +1,4 @@
-from google.generativeai.types import FunctionDeclaration, Tool
+from google.genai.types import FunctionDeclaration, Tool
 
 # --- Tool Declarations ---
 get_lnd_info_declaration = FunctionDeclaration(

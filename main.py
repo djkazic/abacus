@@ -1,12 +1,11 @@
 import os
 import time
 import json
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import sys
 import select
 from collections import deque
-from google.api_core.retry import Retry
-from google.generativeai.types import StopCandidateException
 
 # Import configurations
 from config import (
@@ -62,8 +61,7 @@ loop_client = LoopClient(
 )
 
 # --- Initialize Model and Chat ---
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
-model = genai.GenerativeModel(MODEL_NAME, tools=tools)
+client = genai.Client()
 
 
 def construct_system_prompt(has_loop_channel: bool) -> str:
@@ -155,8 +153,8 @@ Based on the state assessment, you must now decide which workflow to enter.
     - After the rebalance, **conclude this workflow for the current tick.**
 
 3.  **Loop Out as a Fallback:**
-    - **ONLY IF** a rebalance was not possible in the previous step (e.g., no suitable destination channels were found or the rebalance proposal failed), you should then consider a Loop Out.
-    - Now, use the `is_loop_out_candidate` flag. Take your list of channels where this flag is true and call `calculate_and_quote_loop_outs`.
+    - If a rebalance was not possible in the previous step (e.g., no suitable destination channels were found or the rebalance failed), you should consider performing a Loop Out.
+    - Pay attention to the `is_loop_out_candidate` flag. Take your list of channels where this flag is true and call `calculate_and_quote_loop_outs`.
     - For each channel in the result that has a `loop_out_amount_sat` greater than 0, you **MUST** immediately call `initiate_loop_out` for that `channel_id`.
 
 4.  **Perform Per-Channel Fee Adjustments:**
@@ -222,7 +220,7 @@ def sanitize_arguments(tool_declaration, args):
 def main():
     global total_tokens_used
     tui = TUI()
-    tui.display_welcome()
+    #tui.display_welcome()
 
     # --- System Prompt Construction ---
     channels_response = lnd_client.list_lnd_channels()
@@ -243,13 +241,16 @@ def main():
 
     while True:
         try:
-            chat = model.start_chat(
-                history=[{"role": "user", "parts": [SYSTEM_PROMPT]}]
+            chat = client.chats.create(
+                model=MODEL_NAME,
+                history=[{"role": "user", "parts": [{"text": SYSTEM_PROMPT}]}],
+                config=types.GenerateContentConfig(
+                    tools=tools,
+                ),
             )
             current_user_message = (
                 "Assess the node's current state and take action if necessary."
             )
-            request_options = {"retry": Retry()}
             tui.display_message("system", "--- TICK START ---")
 
             if "Assess the node" in current_user_message:
@@ -261,14 +262,11 @@ def main():
 
             try:
                 response = chat.send_message(
-                    current_user_message, request_options=request_options
+                    current_user_message
                 )
-            except StopCandidateException as e:
+            except Exception as e:
                 tui.stop_live_display()
-                tui.display_error(
-                    f"Model stopped with reason: {e.args[0].finish_reason.name}"
-                )
-                tui.display_error(f"Candidate content: {e.args[0].content}")
+                tui.display_error(f"An unexpected error occurred: {e}")
                 continue
             total_tokens_used += response.usage_metadata.total_token_count
 
@@ -382,8 +380,8 @@ def main():
                     tui.display_tool_output(function_name, tool_output)
 
                     tool_responses_parts.append(
-                        genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
+                        types.Part(
+                            function_response=types.FunctionResponse(
                                 name=function_name, response=tool_output
                             )
                         )
@@ -399,8 +397,8 @@ def main():
                     }
                     # This simulates an error response from a tool
                     tool_responses_parts = [
-                        genai.protos.Part(
-                            function_response=genai.protos.FunctionResponse(
+                        types.Part(
+                            function_response=types.FunctionResponse(
                                 name="error_handler", response=error_message
                             )
                         )
@@ -408,15 +406,11 @@ def main():
 
                 try:
                     next_response = chat.send_message(
-                        genai.protos.Content(parts=tool_responses_parts),
-                        request_options=request_options,
+                        tool_responses_parts
                     )
-                except StopCandidateException as e:
+                except Exception as e:
                     tui.stop_live_display()
-                    tui.display_error(
-                        f"Model stopped with reason: {e.args[0].finish_reason.name}"
-                    )
-                    tui.display_error(f"Candidate content: {e.args[0].content}")
+                    tui.display_error(f"An unexpected error occurred: {e}")
                     current_response_parts = []
                     continue
                 total_tokens_used += next_response.usage_metadata.total_token_count
